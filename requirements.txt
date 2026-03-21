@@ -18,4 +18,4 @@ fuzzywuzzy==0.18.0
 Levenshtein
 
 # Scraping
-playwright==1.40.0
+playwright>=1.58,<2

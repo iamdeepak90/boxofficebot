@@ -1,5 +1,5 @@
-REDIS_HOST = "xs444swscgwwk48owwgow8oo"  # Internal hostname from Coolify
+REDIS_HOST = "y3umvc6p9q4jxkkknywk67zm"  # Internal hostname from Coolify
 REDIS_PORT = 6379
 REDIS_DB = 0
 REDIS_USERNAME = "default"
-REDIS_PASSWORD = "OS8kINpfEqkBHyWJUVaQaSyPKiFnZnSXEhOW1CS0Jb3ZIXH4s620Ml0WhefkBqu0"
+REDIS_PASSWORD = "wOvmuJ4wMt7UWgcVa58J1x6uMj0SDbQE1Yw8kTwNEQvhpzk08wgfCv2TWrPkm6Pe"

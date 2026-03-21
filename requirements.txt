@@ -19,7 +19,3 @@ python-Levenshtein==0.21.1
 
 # Scraping
 playwright==1.40.0
-
-# AI & Image
-openai==1.6.1
-tavily-python==0.3.0

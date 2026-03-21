@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Box Office System - Settings</title>
-    <link rel="stylesheet" href="/templates/settings.css">
+    <link rel="stylesheet" href="/static/settings.css">
 </head>
 <body>
     <div class="container">
@@ -26,7 +26,6 @@
         <section id="system" class="panel active">
             <h1>System Configuration</h1>
 
-            <!-- Directus -->
             <div class="card">
                 <h2>📊 Directus CMS</h2>
                 <div class="input-group">
@@ -34,13 +33,12 @@
                     <input type="text" id="directus_url" placeholder="https://admin.gadgeek.in">
                 </div>
                 <div class="input-group">
-                    <label>Directus Token (Optional - Public Access)</label>
+                    <label>Directus Token (Optional)</label>
                     <input type="password" id="directus_token" placeholder="Leave empty if public access enabled">
-                    <small>Not required if Directus collections have Public Access enabled</small>
+                    <small>Not required if collections have Public Access</small>
                 </div>
             </div>
 
-            <!-- Slack -->
             <div class="card">
                 <h2>💬 Slack Integration</h2>
                 <div class="input-group">
@@ -53,7 +51,6 @@
                 </div>
             </div>
 
-            <!-- API Keys -->
             <div class="card">
                 <h2>🔑 API Keys</h2>
                 <div class="input-group">
@@ -77,32 +74,26 @@
         <section id="rss_feeds" class="panel">
             <h1>RSS Feeds Management</h1>
 
-            <!-- News Feeds -->
             <div class="card">
                 <h2>📰 News RSS Feeds</h2>
-                <p class="description">Feeds for general entertainment news (not box office specific)</p>
+                <p class="description">Feeds for general entertainment news</p>
                 <div id="news-feeds-list"></div>
                 <div class="input-group">
                     <label>Add News Feed</label>
-                    <input type="text" id="new_news_feed_url" placeholder="https://example.com/entertainment/rss">
+                    <input type="text" id="new_news_feed_url" placeholder="https://example.com/rss">
                     <button onclick="addNewsFeed()" class="btn-primary">Add Feed</button>
                 </div>
             </div>
 
-            <!-- Box Office Feeds -->
             <div class="card">
                 <h2>📈 Box Office RSS Feeds</h2>
-                <p class="description">Feeds specifically for box office collections news</p>
+                <p class="description">Feeds specifically for box office news</p>
                 <div id="box-office-feeds-list"></div>
                 <div class="input-group">
                     <label>Add Box Office Feed</label>
-                    <input type="text" id="new_box_office_feed_url" placeholder="https://example.com/boxoffice/rss">
+                    <input type="text" id="new_box_office_feed_url" placeholder="https://example.com/rss">
                     <button onclick="addBoxOfficeFeed()" class="btn-primary">Add Feed</button>
                 </div>
-            </div>
-
-            <div class="save-section">
-                <p class="info">RSS feeds are saved automatically when added/removed</p>
             </div>
         </section>
 
@@ -111,15 +102,12 @@
             <h1>AI Models Configuration</h1>
             <p class="description">All models use OpenRouter API</p>
 
-            <!-- Budget Model (RSS Pre-check) -->
             <div class="card">
                 <h2>🔍 Budget Model (RSS Pre-check)</h2>
-                <p class="description">Lightweight model for quick RSS relevance checking</p>
-                
                 <div class="input-group">
                     <label>Model</label>
                     <input type="text" id="budget_model" value="openai/gpt-4o-mini">
-                    <small>Recommended: openai/gpt-4o-mini (cheapest, fast)</small>
+                    <small>Recommended: openai/gpt-4o-mini</small>
                 </div>
                 <div class="input-group">
                     <label>Temperature</label>
@@ -131,11 +119,8 @@
                 </div>
             </div>
 
-            <!-- News Articles (5 Stages) -->
             <div class="card">
-                <h2>📰 News Articles Pipeline (5 Stages)</h2>
-                <p class="description">For news/review/OTT articles from RSS feeds</p>
-
+                <h2>📰 News Articles (5 Stages)</h2>
                 <h3>Stage 1: Generation</h3>
                 <div class="input-group">
                     <label>Model</label>
@@ -164,7 +149,7 @@
                     <input type="number" id="news_humanize_max_tokens" min="1000" max="16000" value="8000">
                 </div>
 
-                <h3>Stage 3: SEO Optimization</h3>
+                <h3>Stage 3: SEO</h3>
                 <div class="input-group">
                     <label>Model</label>
                     <input type="text" id="news_seo_model" value="openai/gpt-4-turbo">
@@ -193,11 +178,39 @@
                 </div>
             </div>
 
-            <!-- Box Office Daily Pages (3 Stages) -->
             <div class="card">
-                <h2>📊 Box Office Daily Pages (3 Stages)</h2>
-                <p class="description">For daily collection prediction/actual articles</p>
+                <h2>📝 Movie Plot (2 Stages)</h2>
+                <h3>Stage 1: Generation</h3>
+                <div class="input-group">
+                    <label>Model</label>
+                    <input type="text" id="plot_generation_model" value="anthropic/claude-3.5-sonnet">
+                </div>
+                <div class="input-group">
+                    <label>Temperature</label>
+                    <input type="number" id="plot_generation_temperature" step="0.1" min="0" max="2" value="0.7">
+                </div>
+                <div class="input-group">
+                    <label>Max Tokens</label>
+                    <input type="number" id="plot_generation_max_tokens" min="500" max="4000" value="2000">
+                </div>
 
+                <h3>Stage 2: Humanization</h3>
+                <div class="input-group">
+                    <label>Model</label>
+                    <input type="text" id="plot_humanize_model" value="anthropic/claude-3.5-sonnet">
+                </div>
+                <div class="input-group">
+                    <label>Temperature</label>
+                    <input type="number" id="plot_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
+                </div>
+                <div class="input-group">
+                    <label>Max Tokens</label>
+                    <input type="number" id="plot_humanize_max_tokens" min="500" max="4000" value="2000">
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>📊 Daily Box Office (3 Stages)</h2>
                 <h3>Stage 1: Generation</h3>
                 <div class="input-group">
                     <label>Model</label>
@@ -209,7 +222,7 @@
                 </div>
                 <div class="input-group">
                     <label>Max Tokens</label>
-                    <input type="number" id="daily_generation_max_tokens" min="1000" max="16000" value="4000">
+                    <input type="number" id="daily_generation_max_tokens" min="1000" max="8000" value="4000">
                 </div>
 
                 <h3>Stage 2: Humanization</h3>
@@ -223,10 +236,10 @@
                 </div>
                 <div class="input-group">
                     <label>Max Tokens</label>
-                    <input type="number" id="daily_humanize_max_tokens" min="1000" max="16000" value="4000">
+                    <input type="number" id="daily_humanize_max_tokens" min="1000" max="8000" value="4000">
                 </div>
 
-                <h3>Stage 3: SEO Optimization</h3>
+                <h3>Stage 3: SEO</h3>
                 <div class="input-group">
                     <label>Model</label>
                     <input type="text" id="daily_seo_model" value="openai/gpt-4-turbo">
@@ -237,15 +250,12 @@
                 </div>
                 <div class="input-group">
                     <label>Max Tokens</label>
-                    <input type="number" id="daily_seo_max_tokens" min="1000" max="8000" value="2000">
+                    <input type="number" id="daily_seo_max_tokens" min="1000" max="4000" value="2000">
                 </div>
             </div>
 
-            <!-- Hub Page Generation (2 Stages) -->
             <div class="card">
-                <h2>🎬 Box Office Hub Page (2 Stages)</h2>
-                <p class="description">For main movie box office hub page</p>
-
+                <h2>🎬 Hub Pages (3 Stages)</h2>
                 <h3>Stage 1: Generation</h3>
                 <div class="input-group">
                     <label>Model</label>
@@ -260,7 +270,21 @@
                     <input type="number" id="hub_generation_max_tokens" min="1000" max="8000" value="4000">
                 </div>
 
-                <h3>Stage 2: SEO Optimization</h3>
+                <h3>Stage 2: Humanization</h3>
+                <div class="input-group">
+                    <label>Model</label>
+                    <input type="text" id="hub_humanize_model" value="anthropic/claude-3.5-sonnet">
+                </div>
+                <div class="input-group">
+                    <label>Temperature</label>
+                    <input type="number" id="hub_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
+                </div>
+                <div class="input-group">
+                    <label>Max Tokens</label>
+                    <input type="number" id="hub_humanize_max_tokens" min="1000" max="8000" value="4000">
+                </div>
+
+                <h3>Stage 3: SEO</h3>
                 <div class="input-group">
                     <label>Model</label>
                     <input type="text" id="hub_seo_model" value="openai/gpt-4-turbo">
@@ -271,17 +295,16 @@
                 </div>
                 <div class="input-group">
                     <label>Max Tokens</label>
-                    <input type="number" id="hub_seo_max_tokens" min="1000" max="8000" value="2000">
+                    <input type="number" id="hub_seo_max_tokens" min="1000" max="4000" value="2000">
                 </div>
             </div>
 
-            <!-- Tavily -->
             <div class="card">
                 <h2>🔎 Tavily Research</h2>
                 <div class="input-group">
                     <label>Max Results</label>
                     <input type="number" id="tavily_max_results" min="1" max="10" value="5">
-                    <small>Number of search results to include in context</small>
+                    <small>Number of search results to include</small>
                 </div>
             </div>
 
@@ -298,23 +321,19 @@
 
             <div class="card">
                 <h2>🕷️ Sacnilk Scraper</h2>
-                
                 <div class="input-group">
                     <label>Scraper Interval (hours)</label>
                     <input type="number" id="scraper_interval_hours" min="1" max="24" value="4">
-                    <small>How often to scrape Sacnilk for box office data</small>
+                    <small>How often to scrape Sacnilk</small>
                 </div>
-
                 <div class="input-group">
                     <label>Max Concurrent Scrapes</label>
                     <input type="number" id="max_concurrent_scrapes" min="1" max="20" value="5">
-                    <small>Maximum parallel scraping operations</small>
                 </div>
-
                 <div class="input-group">
-                    <label>Proxies (JSON Array) - Optional</label>
-                    <textarea id="scraper_proxies" rows="4" placeholder='["http://user:pass@proxy1:8080", "http://user:pass@proxy2:8080"]'></textarea>
-                    <small>Rotating proxy list for anti-bot protection (leave empty for direct connection)</small>
+                    <label>Proxies (JSON Array)</label>
+                    <textarea id="scraper_proxies" rows="4" placeholder='["http://user:pass@proxy:8080"]'></textarea>
+                    <small>Leave empty for direct connection</small>
                 </div>
             </div>
 
@@ -329,42 +348,33 @@
         <section id="advanced" class="panel">
             <h1>Advanced Settings</h1>
 
-            <!-- Intervals -->
             <div class="card">
                 <h2>⏱️ Intervals</h2>
-                
                 <div class="input-group">
                     <label>RSS Check Interval (minutes)</label>
                     <input type="number" id="rss_check_interval_minutes" min="1" max="60" value="5">
-                    <small>How often to check RSS feeds for new articles</small>
                 </div>
             </div>
 
-            <!-- Deduplication -->
             <div class="card">
                 <h2>🔍 Deduplication</h2>
-                
                 <div class="input-group">
                     <label>Fuzzy Match Threshold (%)</label>
                     <input type="number" id="fuzzy_match_threshold" min="50" max="100" value="90">
-                    <small>Title similarity threshold for duplicate movie detection (90 = 90% similar)</small>
+                    <small>Title similarity threshold (90 = 90% similar)</small>
                 </div>
             </div>
 
-            <!-- Backfill -->
             <div class="card">
-                <h2>📦 Backfill Configuration</h2>
-                
+                <h2>📦 Backfill</h2>
                 <div class="input-group">
                     <label>Batch Size</label>
                     <input type="number" id="backfill_batch_size" min="1" max="20" value="5">
-                    <small>How many backfill AI jobs to queue immediately (rest delayed)</small>
+                    <small>How many backfill AI jobs to queue immediately</small>
                 </div>
-
                 <div class="input-group">
-                    <label>Delay Between Batches (seconds)</label>
+                    <label>Delay (seconds)</label>
                     <input type="number" id="backfill_delay_seconds" min="30" max="600" value="120">
-                    <small>Delay before processing next batch</small>
                 </div>
             </div>
 
@@ -379,6 +389,6 @@
         <div id="notification" class="notification"></div>
     </div>
 
-    <script src="/templates/settings.js"></script>
+    <script src="/static/settings.js"></script>
 </body>
 </html>

@@ -44,15 +44,12 @@ document.addEventListener('DOMContentLoaded', function() {
         tab.addEventListener('click', function() {
             const targetTab = this.dataset.tab;
             
-            // Remove active class from all tabs and panels
             tabs.forEach(t => t.classList.remove('active'));
             panels.forEach(p => p.classList.remove('active'));
             
-            // Add active class to clicked tab and corresponding panel
             this.classList.add('active');
             document.getElementById(targetTab).classList.add('active');
             
-            // Load settings for specific tabs
             if (targetTab === 'rss_feeds') {
                 loadRSSFeeds();
             } else if (targetTab === 'ai_models') {
@@ -67,7 +64,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Load system settings on page load
     loadSystemSettings();
 });
 
@@ -156,7 +152,7 @@ function renderFeeds(containerId, feeds) {
             <div class="feed-item ${enabled ? 'enabled' : 'disabled'}">
                 <div class="feed-url">${feed.url}</div>
                 <div class="feed-actions">
-                    <button onclick="toggleFeed('${containerId}', ${index})" class="btn-small">
+                    <button onclick="toggleFeed('${containerId}', ${index})" class="btn-small btn-primary">
                         ${enabled ? '✓ Enabled' : '✗ Disabled'}
                     </button>
                     <button onclick="removeFeed('${containerId}', ${index})" class="btn-small btn-danger">
@@ -262,12 +258,12 @@ function loadAIModelsSettings() {
     fetch('/api/settings/ai_models')
         .then(res => res.json())
         .then(data => {
-            // Budget Model
+            // Budget
             setInputValue('budget_model', data.budget_model);
             setInputValue('budget_temperature', data.budget_temperature);
             setInputValue('budget_max_tokens', data.budget_max_tokens);
             
-            // News Articles
+            // News
             setInputValue('news_generation_model', data.news_generation_model);
             setInputValue('news_generation_temperature', data.news_generation_temperature);
             setInputValue('news_generation_max_tokens', data.news_generation_max_tokens);
@@ -281,7 +277,15 @@ function loadAIModelsSettings() {
             setInputValue('news_image_width', data.news_image_width);
             setInputValue('news_image_height', data.news_image_height);
             
-            // Daily Pages
+            // Plot
+            setInputValue('plot_generation_model', data.plot_generation_model);
+            setInputValue('plot_generation_temperature', data.plot_generation_temperature);
+            setInputValue('plot_generation_max_tokens', data.plot_generation_max_tokens);
+            setInputValue('plot_humanize_model', data.plot_humanize_model);
+            setInputValue('plot_humanize_temperature', data.plot_humanize_temperature);
+            setInputValue('plot_humanize_max_tokens', data.plot_humanize_max_tokens);
+            
+            // Daily
             setInputValue('daily_generation_model', data.daily_generation_model);
             setInputValue('daily_generation_temperature', data.daily_generation_temperature);
             setInputValue('daily_generation_max_tokens', data.daily_generation_max_tokens);
@@ -292,10 +296,13 @@ function loadAIModelsSettings() {
             setInputValue('daily_seo_temperature', data.daily_seo_temperature);
             setInputValue('daily_seo_max_tokens', data.daily_seo_max_tokens);
             
-            // Hub Pages
+            // Hub
             setInputValue('hub_generation_model', data.hub_generation_model);
             setInputValue('hub_generation_temperature', data.hub_generation_temperature);
             setInputValue('hub_generation_max_tokens', data.hub_generation_max_tokens);
+            setInputValue('hub_humanize_model', data.hub_humanize_model);
+            setInputValue('hub_humanize_temperature', data.hub_humanize_temperature);
+            setInputValue('hub_humanize_max_tokens', data.hub_humanize_max_tokens);
             setInputValue('hub_seo_model', data.hub_seo_model);
             setInputValue('hub_seo_temperature', data.hub_seo_temperature);
             setInputValue('hub_seo_max_tokens', data.hub_seo_max_tokens);
@@ -308,12 +315,10 @@ function loadAIModelsSettings() {
 
 function saveAIModelsSettings() {
     const settings = {
-        // Budget
         budget_model: getInputValue('budget_model'),
         budget_temperature: parseFloat(getInputValue('budget_temperature')),
         budget_max_tokens: parseInt(getInputValue('budget_max_tokens')),
         
-        // News
         news_generation_model: getInputValue('news_generation_model'),
         news_generation_temperature: parseFloat(getInputValue('news_generation_temperature')),
         news_generation_max_tokens: parseInt(getInputValue('news_generation_max_tokens')),
@@ -327,7 +332,13 @@ function saveAIModelsSettings() {
         news_image_width: parseInt(getInputValue('news_image_width')),
         news_image_height: parseInt(getInputValue('news_image_height')),
         
-        // Daily
+        plot_generation_model: getInputValue('plot_generation_model'),
+        plot_generation_temperature: parseFloat(getInputValue('plot_generation_temperature')),
+        plot_generation_max_tokens: parseInt(getInputValue('plot_generation_max_tokens')),
+        plot_humanize_model: getInputValue('plot_humanize_model'),
+        plot_humanize_temperature: parseFloat(getInputValue('plot_humanize_temperature')),
+        plot_humanize_max_tokens: parseInt(getInputValue('plot_humanize_max_tokens')),
+        
         daily_generation_model: getInputValue('daily_generation_model'),
         daily_generation_temperature: parseFloat(getInputValue('daily_generation_temperature')),
         daily_generation_max_tokens: parseInt(getInputValue('daily_generation_max_tokens')),
@@ -338,15 +349,16 @@ function saveAIModelsSettings() {
         daily_seo_temperature: parseFloat(getInputValue('daily_seo_temperature')),
         daily_seo_max_tokens: parseInt(getInputValue('daily_seo_max_tokens')),
         
-        // Hub
         hub_generation_model: getInputValue('hub_generation_model'),
         hub_generation_temperature: parseFloat(getInputValue('hub_generation_temperature')),
         hub_generation_max_tokens: parseInt(getInputValue('hub_generation_max_tokens')),
+        hub_humanize_model: getInputValue('hub_humanize_model'),
+        hub_humanize_temperature: parseFloat(getInputValue('hub_humanize_temperature')),
+        hub_humanize_max_tokens: parseInt(getInputValue('hub_humanize_max_tokens')),
         hub_seo_model: getInputValue('hub_seo_model'),
         hub_seo_temperature: parseFloat(getInputValue('hub_seo_temperature')),
         hub_seo_max_tokens: parseInt(getInputValue('hub_seo_max_tokens')),
         
-        // Tavily
         tavily_max_results: parseInt(getInputValue('tavily_max_results'))
     };
     

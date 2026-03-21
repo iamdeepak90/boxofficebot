@@ -1,34 +1,172 @@
 """
-settings_server.py - Settings UI backend API
-Runs: gunicorn -w 1 -b 0.0.0.0:3000 settings_server:app
+server.py - Web layer for Slack webhooks + Settings UI/API
+Runs on port 8000
 """
 
 from flask import Flask, request, jsonify, send_from_directory
 from common import *
+import json
 import os
 
-app = Flask(__name__, 
-    static_folder='static',
-    template_folder='templates'
-)
+app = Flask(__name__, static_folder='templates', template_folder='templates')
 
-# Serve static files
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory('static', filename)
+# ============================================================================
+# SLACK WEBHOOK HANDLER
+# ============================================================================
 
-# Serve settings page
+def parse_slack_payload(payload: Dict) -> Optional[Dict]:
+    """Parse Slack interaction payload"""
+    try:
+        action_id = payload.get('actions', [{}])[0].get('action_id')
+        lead_id = payload.get('actions', [{}])[0].get('value')
+        response_url = payload.get('response_url')
+        channel = payload.get('container', {}).get('channel_id') or payload.get('channel', {}).get('id')
+        message_ts = payload.get('container', {}).get('message_ts') or payload.get('message', {}).get('ts')
+        
+        # Extract selections
+        state = payload.get('state', {}).get('values', {})
+        
+        movie_ids = []
+        movies_block = state.get('movies_block', {})
+        if movies_block:
+            selected = movies_block.get('select_movies', {}).get('selected_options', [])
+            movie_ids = [opt['value'] for opt in selected]
+        
+        people_ids = []
+        people_block = state.get('people_block', {})
+        if people_block:
+            selected = people_block.get('select_people', {}).get('selected_options', [])
+            people_ids = [opt['value'] for opt in selected]
+        
+        category_id = None
+        category_block = state.get('category_block', {})
+        if category_block:
+            selected = category_block.get('select_category', {}).get('selected_option')
+            if selected:
+                category_id = selected.get('value')
+        
+        return {
+            'action': action_id,
+            'lead_id': lead_id,
+            'movie_ids': movie_ids,
+            'people_ids': people_ids,
+            'category_id': category_id,
+            'response_url': response_url,
+            'channel': channel,
+            'message_ts': message_ts
+        }
+        
+    except Exception as e:
+        logger.error(f"Parse Slack payload error: {e}")
+        return None
+
+
+@app.route('/slack/interactions', methods=['POST'])
+def slack_interactions():
+    """Handle Slack interactions (Approve/Reject only)"""
+    try:
+        payload_str = request.form.get('payload')
+        if not payload_str:
+            return jsonify({"error": "No payload"}), 400
+        
+        payload = json.loads(payload_str)
+        parsed = parse_slack_payload(payload)
+        
+        if not parsed:
+            return jsonify({"error": "Invalid payload"}), 400
+        
+        action = parsed.get('action')
+        lead_id = parsed.get('lead_id')
+        response_url = parsed.get('response_url')
+        channel = parsed.get('channel')
+        message_ts = parsed.get('message_ts')
+        
+        logger.info(f"Slack action: {action}, Lead: {lead_id}")
+        
+        # REJECT
+        if action == 'reject_article':
+            directus_patch(f"/items/news_leads/{lead_id}", {'status': 'rejected'})
+            
+            if channel and message_ts:
+                slack_delete_message(channel, message_ts)
+            
+            if response_url:
+                slack_ephemeral(response_url, "❌ Article rejected")
+            
+            return jsonify({"ok": True}), 200
+        
+        # APPROVE
+        elif action == 'approve_article':
+            # Validate
+            movie_ids = parsed.get('movie_ids', [])
+            people_ids = parsed.get('people_ids', [])
+            category_id = parsed.get('category_id')
+            
+            if not movie_ids and not people_ids:
+                if response_url:
+                    slack_ephemeral(response_url, "⚠️ Select at least one movie or person")
+                return jsonify({"error": "No selection"}), 200
+            
+            if not category_id:
+                if response_url:
+                    slack_ephemeral(response_url, "⚠️ Please select a category")
+                return jsonify({"error": "No category"}), 200
+            
+            # Update lead
+            directus_patch(f"/items/news_leads/{lead_id}", {'status': 'approved_high'})
+            
+            # Enqueue job
+            job_data = {
+                'type': 'news_article',
+                'lead_id': lead_id,
+                'movie_ids': movie_ids,
+                'people_ids': people_ids,
+                'category_id': category_id,
+                'response_url': response_url
+            }
+            
+            enqueue_job('queue:content_generation', job_data)
+            
+            # Delete Slack message
+            if channel and message_ts:
+                slack_delete_message(channel, message_ts)
+            
+            # Confirm
+            if response_url:
+                slack_ephemeral(response_url, "✅ Article approved! Generating content...")
+            
+            return jsonify({"ok": True}), 200
+        
+        else:
+            return jsonify({"error": "Unknown action"}), 400
+        
+    except Exception as e:
+        logger.error(f"Slack webhook error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# SETTINGS UI
+# ============================================================================
+
 @app.route('/')
 @app.route('/settings')
 def settings_page():
+    """Serve settings HTML page"""
     return send_from_directory('templates', 'settings.html')
 
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static files (CSS/JS)"""
+    return send_from_directory('templates', filename)
+
 # ============================================================================
-# SYSTEM SETTINGS
+# SETTINGS API - SYSTEM
 # ============================================================================
 
 @app.route('/api/settings/system', methods=['GET'])
 def get_system_settings():
+    """Get system settings"""
     return jsonify({
         'directus_url': get_setting('directus_url', 'https://admin.gadgeek.in'),
         'directus_token': get_setting('directus_token', ''),
@@ -38,94 +176,126 @@ def get_system_settings():
         'tavily_api_key': get_setting('tavily_api_key', '')
     })
 
+
 @app.route('/api/settings/system', methods=['POST'])
 def save_system_settings():
+    """Save system settings"""
     data = request.json
     for key, value in data.items():
         set_setting(key, value)
     return jsonify({'success': True})
 
 # ============================================================================
-# RSS FEEDS
+# SETTINGS API - RSS FEEDS
 # ============================================================================
 
 @app.route('/api/settings/rss_feeds/news', methods=['GET'])
 def get_news_feeds():
+    """Get news RSS feeds"""
     return jsonify({'feeds': get_setting('news_rss_feeds', [])})
+
 
 @app.route('/api/settings/rss_feeds/box_office', methods=['GET'])
 def get_box_office_feeds():
+    """Get box office RSS feeds"""
     return jsonify({'feeds': get_setting('box_office_rss_feeds', [])})
+
 
 @app.route('/api/settings/rss_feeds/news/add', methods=['POST'])
 def add_news_feed():
+    """Add news RSS feed"""
     url = request.json.get('url')
+    if not url:
+        return jsonify({'success': False, 'error': 'URL required'})
+    
     feeds = get_setting('news_rss_feeds', [])
     feeds.append({'url': url, 'enabled': True})
     set_setting('news_rss_feeds', feeds)
     return jsonify({'success': True})
 
+
 @app.route('/api/settings/rss_feeds/box_office/add', methods=['POST'])
 def add_box_office_feed():
+    """Add box office RSS feed"""
     url = request.json.get('url')
+    if not url:
+        return jsonify({'success': False})
+    
     feeds = get_setting('box_office_rss_feeds', [])
     feeds.append({'url': url, 'enabled': True})
     set_setting('box_office_rss_feeds', feeds)
     return jsonify({'success': True})
 
+
 @app.route('/api/settings/rss_feeds/news/toggle', methods=['POST'])
 def toggle_news_feed():
+    """Toggle news feed"""
     index = request.json.get('index')
     feeds = get_setting('news_rss_feeds', [])
+    
     if 0 <= index < len(feeds):
         feeds[index]['enabled'] = not feeds[index].get('enabled', True)
         set_setting('news_rss_feeds', feeds)
         return jsonify({'success': True})
+    
     return jsonify({'success': False})
+
 
 @app.route('/api/settings/rss_feeds/box_office/toggle', methods=['POST'])
 def toggle_box_office_feed():
+    """Toggle box office feed"""
     index = request.json.get('index')
     feeds = get_setting('box_office_rss_feeds', [])
+    
     if 0 <= index < len(feeds):
         feeds[index]['enabled'] = not feeds[index].get('enabled', True)
         set_setting('box_office_rss_feeds', feeds)
         return jsonify({'success': True})
+    
     return jsonify({'success': False})
+
 
 @app.route('/api/settings/rss_feeds/news/remove', methods=['POST'])
 def remove_news_feed():
+    """Remove news feed"""
     index = request.json.get('index')
     feeds = get_setting('news_rss_feeds', [])
+    
     if 0 <= index < len(feeds):
         feeds.pop(index)
         set_setting('news_rss_feeds', feeds)
         return jsonify({'success': True})
+    
     return jsonify({'success': False})
+
 
 @app.route('/api/settings/rss_feeds/box_office/remove', methods=['POST'])
 def remove_box_office_feed():
+    """Remove box office feed"""
     index = request.json.get('index')
     feeds = get_setting('box_office_rss_feeds', [])
+    
     if 0 <= index < len(feeds):
         feeds.pop(index)
         set_setting('box_office_rss_feeds', feeds)
         return jsonify({'success': True})
+    
     return jsonify({'success': False})
 
 # ============================================================================
-# AI MODELS
+# SETTINGS API - AI MODELS
 # ============================================================================
 
 @app.route('/api/settings/ai_models', methods=['GET'])
 def get_ai_models():
+    """Get AI model settings"""
     return jsonify({
         # Budget
         'budget_model': get_setting('budget_model', 'openai/gpt-4o-mini'),
         'budget_temperature': get_setting('budget_temperature', 0.3),
         'budget_max_tokens': get_setting('budget_max_tokens', 500),
         
-        # News Articles (5 stages)
+        # News (5 stages)
         'news_generation_model': get_setting('news_generation_model', 'anthropic/claude-3.5-sonnet'),
         'news_generation_temperature': get_setting('news_generation_temperature', 0.7),
         'news_generation_max_tokens': get_setting('news_generation_max_tokens', 8000),
@@ -139,7 +309,15 @@ def get_ai_models():
         'news_image_width': get_setting('news_image_width', 1024),
         'news_image_height': get_setting('news_image_height', 768),
         
-        # Daily Pages (3 stages)
+        # Plot (2 stages)
+        'plot_generation_model': get_setting('plot_generation_model', 'anthropic/claude-3.5-sonnet'),
+        'plot_generation_temperature': get_setting('plot_generation_temperature', 0.7),
+        'plot_generation_max_tokens': get_setting('plot_generation_max_tokens', 2000),
+        'plot_humanize_model': get_setting('plot_humanize_model', 'anthropic/claude-3.5-sonnet'),
+        'plot_humanize_temperature': get_setting('plot_humanize_temperature', 0.8),
+        'plot_humanize_max_tokens': get_setting('plot_humanize_max_tokens', 2000),
+        
+        # Daily (3 stages)
         'daily_generation_model': get_setting('daily_generation_model', 'anthropic/claude-3.5-sonnet'),
         'daily_generation_temperature': get_setting('daily_generation_temperature', 0.7),
         'daily_generation_max_tokens': get_setting('daily_generation_max_tokens', 4000),
@@ -150,50 +328,62 @@ def get_ai_models():
         'daily_seo_temperature': get_setting('daily_seo_temperature', 0.5),
         'daily_seo_max_tokens': get_setting('daily_seo_max_tokens', 2000),
         
-        # Hub Pages (2 stages)
+        # Hub (3 stages)
         'hub_generation_model': get_setting('hub_generation_model', 'anthropic/claude-3.5-sonnet'),
         'hub_generation_temperature': get_setting('hub_generation_temperature', 0.7),
         'hub_generation_max_tokens': get_setting('hub_generation_max_tokens', 4000),
+        'hub_humanize_model': get_setting('hub_humanize_model', 'anthropic/claude-3.5-sonnet'),
+        'hub_humanize_temperature': get_setting('hub_humanize_temperature', 0.8),
+        'hub_humanize_max_tokens': get_setting('hub_humanize_max_tokens', 4000),
         'hub_seo_model': get_setting('hub_seo_model', 'openai/gpt-4-turbo'),
         'hub_seo_temperature': get_setting('hub_seo_temperature', 0.5),
         'hub_seo_max_tokens': get_setting('hub_seo_max_tokens', 2000),
+        
+        # Fallback
+        'fallback_generation_model': get_setting('fallback_generation_model', 'openai/gpt-4-turbo'),
         
         # Tavily
         'tavily_max_results': get_setting('tavily_max_results', 5)
     })
 
+
 @app.route('/api/settings/ai_models', methods=['POST'])
 def save_ai_models():
+    """Save AI model settings"""
     data = request.json
     for key, value in data.items():
         set_setting(key, value)
     return jsonify({'success': True})
 
 # ============================================================================
-# SCRAPER
+# SETTINGS API - SCRAPER
 # ============================================================================
 
 @app.route('/api/settings/scraper', methods=['GET'])
 def get_scraper_settings():
+    """Get scraper settings"""
     return jsonify({
         'scraper_interval_hours': get_setting('scraper_interval_hours', 4),
         'max_concurrent_scrapes': get_setting('max_concurrent_scrapes', 5),
         'scraper_proxies': get_setting('scraper_proxies', [])
     })
 
+
 @app.route('/api/settings/scraper', methods=['POST'])
 def save_scraper_settings():
+    """Save scraper settings"""
     data = request.json
     for key, value in data.items():
         set_setting(key, value)
     return jsonify({'success': True})
 
 # ============================================================================
-# ADVANCED
+# SETTINGS API - ADVANCED
 # ============================================================================
 
 @app.route('/api/settings/advanced', methods=['GET'])
 def get_advanced_settings():
+    """Get advanced settings"""
     return jsonify({
         'rss_check_interval_minutes': get_setting('rss_check_interval_minutes', 5),
         'fuzzy_match_threshold': get_setting('fuzzy_match_threshold', 90),
@@ -201,8 +391,10 @@ def get_advanced_settings():
         'backfill_delay_seconds': get_setting('backfill_delay_seconds', 120)
     })
 
+
 @app.route('/api/settings/advanced', methods=['POST'])
 def save_advanced_settings():
+    """Save advanced settings"""
     data = request.json
     for key, value in data.items():
         set_setting(key, value)
@@ -213,8 +405,19 @@ def save_advanced_settings():
 # ============================================================================
 
 @app.route('/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'healthy'})
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'box-office-server',
+        'timestamp': datetime.now().isoformat()
+    }), 200
+
+# ============================================================================
+# RUN SERVER
+# ============================================================================
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=False)
+    # Development mode only - use gunicorn in production
+    logger.info("Starting server in development mode...")
+    app.run(host='0.0.0.0', port=8000, debug=False)

@@ -14,7 +14,6 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fuzzywuzzy import fuzz
 from bs4 import BeautifulSoup
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB
 
 # ============================================================================
 # LOGGING SETUP
@@ -33,10 +32,8 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 try:
-    redis_client = redis.Redis(
-        host="y3umvc6p9q4jxkkknywk67zm",
-        port=6379,
-        db=0,
+    redis_client = redis.from_url(
+        "redis://boxoffice:wOvmuJ4wMt7UWgcVa58J1x6uMj0SDbQE1Yw8kTwNEQvhpzk08wgfCv2TWrPkm6Pe@y3umvc6p9q4jxkkknywk67zm:6379/0",
         decode_responses=True,
         socket_connect_timeout=5,
         socket_timeout=5

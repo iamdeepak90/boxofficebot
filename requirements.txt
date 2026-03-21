@@ -1,0 +1,13 @@
+# Existing requirements
+flask==3.0.0
+requests==2.31.0
+feedparser==6.0.10
+gunicorn==21.2.0
+redis==5.0.1
+
+# New requirements for Box Office
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.21.1
+playwright==1.40.0
+beautifulsoup4==4.12.2
+lxml==4.9.3

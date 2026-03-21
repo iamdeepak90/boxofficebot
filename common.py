@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fuzzywuzzy import fuzz
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 # ============================================================================
 # LOGGING SETUP

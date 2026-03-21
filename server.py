@@ -1,9 +1,10 @@
 """
-server.py - Web layer for Slack webhooks + Settings UI/API
+server.py - Web layer for Slack webhooks + Settings UI
 Runs on port 8000
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
+from functools import wraps
 from common import *
 import json
 import os
@@ -11,7 +12,36 @@ import os
 app = Flask(__name__, static_folder='templates', template_folder='templates')
 
 # ============================================================================
-# SLACK WEBHOOK HANDLER
+# AUTHENTICATION
+# ============================================================================
+
+def check_auth(username, password):
+    """Check if username/password is valid"""
+    admin_username = get_setting('admin_username', 'admin')
+    admin_password = get_setting('admin_password', 'boxoffice2024')
+    
+    return username == admin_username and password == admin_password
+
+def authenticate():
+    """Send 401 response for authentication"""
+    return Response(
+        'Authentication required.\nPlease login with your credentials.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="Box Office Settings"'}
+    )
+
+def requires_auth(f):
+    """Decorator for routes that require authentication"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
+# ============================================================================
+# SLACK WEBHOOK HANDLER (PUBLIC - NO AUTH)
 # ============================================================================
 
 def parse_slack_payload(payload: Dict) -> Optional[Dict]:
@@ -23,7 +53,6 @@ def parse_slack_payload(payload: Dict) -> Optional[Dict]:
         channel = payload.get('container', {}).get('channel_id') or payload.get('channel', {}).get('id')
         message_ts = payload.get('container', {}).get('message_ts') or payload.get('message', {}).get('ts')
         
-        # Extract selections
         state = payload.get('state', {}).get('values', {})
         
         movie_ids = []
@@ -63,7 +92,7 @@ def parse_slack_payload(payload: Dict) -> Optional[Dict]:
 
 @app.route('/slack/interactions', methods=['POST'])
 def slack_interactions():
-    """Handle Slack interactions (Approve/Reject only)"""
+    """Handle Slack interactions (Approve/Reject) - PUBLIC"""
     try:
         payload_str = request.form.get('payload')
         if not payload_str:
@@ -97,7 +126,6 @@ def slack_interactions():
         
         # APPROVE
         elif action == 'approve_article':
-            # Validate
             movie_ids = parsed.get('movie_ids', [])
             people_ids = parsed.get('people_ids', [])
             category_id = parsed.get('category_id')
@@ -112,10 +140,8 @@ def slack_interactions():
                     slack_ephemeral(response_url, "⚠️ Please select a category")
                 return jsonify({"error": "No category"}), 200
             
-            # Update lead
             directus_patch(f"/items/news_leads/{lead_id}", {'status': 'approved_high'})
             
-            # Enqueue job
             job_data = {
                 'type': 'news_article',
                 'lead_id': lead_id,
@@ -127,11 +153,9 @@ def slack_interactions():
             
             enqueue_job('queue:content_generation', job_data)
             
-            # Delete Slack message
             if channel and message_ts:
                 slack_delete_message(channel, message_ts)
             
-            # Confirm
             if response_url:
                 slack_ephemeral(response_url, "✅ Article approved! Generating content...")
             
@@ -145,26 +169,29 @@ def slack_interactions():
         return jsonify({"error": str(e)}), 500
 
 # ============================================================================
-# SETTINGS UI
+# SETTINGS UI (PROTECTED)
 # ============================================================================
 
 @app.route('/')
 @app.route('/settings')
+@requires_auth
 def settings_page():
     """Serve settings HTML page"""
     return send_from_directory('templates', 'settings.html')
 
 
 @app.route('/static/<path:filename>')
+@requires_auth
 def serve_static(filename):
     """Serve static files (CSS/JS)"""
     return send_from_directory('templates', filename)
 
 # ============================================================================
-# SETTINGS API - SYSTEM
+# SETTINGS API - SYSTEM (PROTECTED)
 # ============================================================================
 
 @app.route('/api/settings/system', methods=['GET'])
+@requires_auth
 def get_system_settings():
     """Get system settings"""
     return jsonify({
@@ -173,11 +200,14 @@ def get_system_settings():
         'slack_bot_token': get_setting('slack_bot_token', ''),
         'slack_channel_id': get_setting('slack_channel_id', ''),
         'openrouter_api_key': get_setting('openrouter_api_key', ''),
-        'tavily_api_key': get_setting('tavily_api_key', '')
+        'tavily_api_key': get_setting('tavily_api_key', ''),
+        'admin_username': get_setting('admin_username', 'admin'),
+        'admin_password': get_setting('admin_password', 'boxoffice2024')
     })
 
 
 @app.route('/api/settings/system', methods=['POST'])
+@requires_auth
 def save_system_settings():
     """Save system settings"""
     data = request.json
@@ -186,22 +216,25 @@ def save_system_settings():
     return jsonify({'success': True})
 
 # ============================================================================
-# SETTINGS API - RSS FEEDS
+# SETTINGS API - RSS FEEDS (PROTECTED)
 # ============================================================================
 
 @app.route('/api/settings/rss_feeds/news', methods=['GET'])
+@requires_auth
 def get_news_feeds():
     """Get news RSS feeds"""
     return jsonify({'feeds': get_setting('news_rss_feeds', [])})
 
 
 @app.route('/api/settings/rss_feeds/box_office', methods=['GET'])
+@requires_auth
 def get_box_office_feeds():
     """Get box office RSS feeds"""
     return jsonify({'feeds': get_setting('box_office_rss_feeds', [])})
 
 
 @app.route('/api/settings/rss_feeds/news/add', methods=['POST'])
+@requires_auth
 def add_news_feed():
     """Add news RSS feed"""
     url = request.json.get('url')
@@ -215,6 +248,7 @@ def add_news_feed():
 
 
 @app.route('/api/settings/rss_feeds/box_office/add', methods=['POST'])
+@requires_auth
 def add_box_office_feed():
     """Add box office RSS feed"""
     url = request.json.get('url')
@@ -228,6 +262,7 @@ def add_box_office_feed():
 
 
 @app.route('/api/settings/rss_feeds/news/toggle', methods=['POST'])
+@requires_auth
 def toggle_news_feed():
     """Toggle news feed"""
     index = request.json.get('index')
@@ -242,6 +277,7 @@ def toggle_news_feed():
 
 
 @app.route('/api/settings/rss_feeds/box_office/toggle', methods=['POST'])
+@requires_auth
 def toggle_box_office_feed():
     """Toggle box office feed"""
     index = request.json.get('index')
@@ -256,6 +292,7 @@ def toggle_box_office_feed():
 
 
 @app.route('/api/settings/rss_feeds/news/remove', methods=['POST'])
+@requires_auth
 def remove_news_feed():
     """Remove news feed"""
     index = request.json.get('index')
@@ -270,6 +307,7 @@ def remove_news_feed():
 
 
 @app.route('/api/settings/rss_feeds/box_office/remove', methods=['POST'])
+@requires_auth
 def remove_box_office_feed():
     """Remove box office feed"""
     index = request.json.get('index')
@@ -283,10 +321,11 @@ def remove_box_office_feed():
     return jsonify({'success': False})
 
 # ============================================================================
-# SETTINGS API - AI MODELS
+# SETTINGS API - AI MODELS (PROTECTED)
 # ============================================================================
 
 @app.route('/api/settings/ai_models', methods=['GET'])
+@requires_auth
 def get_ai_models():
     """Get AI model settings"""
     return jsonify({
@@ -348,6 +387,7 @@ def get_ai_models():
 
 
 @app.route('/api/settings/ai_models', methods=['POST'])
+@requires_auth
 def save_ai_models():
     """Save AI model settings"""
     data = request.json
@@ -356,10 +396,11 @@ def save_ai_models():
     return jsonify({'success': True})
 
 # ============================================================================
-# SETTINGS API - SCRAPER
+# SETTINGS API - SCRAPER (PROTECTED)
 # ============================================================================
 
 @app.route('/api/settings/scraper', methods=['GET'])
+@requires_auth
 def get_scraper_settings():
     """Get scraper settings"""
     return jsonify({
@@ -370,6 +411,7 @@ def get_scraper_settings():
 
 
 @app.route('/api/settings/scraper', methods=['POST'])
+@requires_auth
 def save_scraper_settings():
     """Save scraper settings"""
     data = request.json
@@ -378,10 +420,11 @@ def save_scraper_settings():
     return jsonify({'success': True})
 
 # ============================================================================
-# SETTINGS API - ADVANCED
+# SETTINGS API - ADVANCED (PROTECTED)
 # ============================================================================
 
 @app.route('/api/settings/advanced', methods=['GET'])
+@requires_auth
 def get_advanced_settings():
     """Get advanced settings"""
     return jsonify({
@@ -393,6 +436,7 @@ def get_advanced_settings():
 
 
 @app.route('/api/settings/advanced', methods=['POST'])
+@requires_auth
 def save_advanced_settings():
     """Save advanced settings"""
     data = request.json
@@ -401,7 +445,7 @@ def save_advanced_settings():
     return jsonify({'success': True})
 
 # ============================================================================
-# HEALTH CHECK
+# HEALTH CHECK (PUBLIC)
 # ============================================================================
 
 @app.route('/health', methods=['GET'])
@@ -418,6 +462,5 @@ def health_check():
 # ============================================================================
 
 if __name__ == '__main__':
-    # Development mode only - use gunicorn in production
     logger.info("Starting server in development mode...")
     app.run(host='0.0.0.0', port=8000, debug=False)

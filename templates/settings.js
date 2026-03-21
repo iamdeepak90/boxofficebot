@@ -81,6 +81,8 @@ function loadSystemSettings() {
             setInputValue('slack_channel_id', data.slack_channel_id);
             setInputValue('openrouter_api_key', data.openrouter_api_key);
             setInputValue('tavily_api_key', data.tavily_api_key);
+            setInputValue('admin_username', data.admin_username);
+            setInputValue('admin_password', data.admin_password);
         })
         .catch(err => {
             console.error('Error loading system settings:', err);
@@ -95,7 +97,9 @@ function saveSystemSettings() {
         slack_bot_token: getInputValue('slack_bot_token'),
         slack_channel_id: getInputValue('slack_channel_id'),
         openrouter_api_key: getInputValue('openrouter_api_key'),
-        tavily_api_key: getInputValue('tavily_api_key')
+        tavily_api_key: getInputValue('tavily_api_key'),
+        admin_username: getInputValue('admin_username'),
+        admin_password: getInputValue('admin_password')
     };
     
     fetch('/api/settings/system', {

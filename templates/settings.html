@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Box Office System - Settings</title>
     <link rel="stylesheet" href="/static/settings.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -60,6 +62,20 @@
                 <div class="input-group">
                     <label>Tavily API Key</label>
                     <input type="password" id="tavily_api_key" placeholder="tvly-...">
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🔐 Admin Credentials</h2>
+                <div class="input-group">
+                    <label>Admin Username</label>
+                    <input type="text" id="admin_username" placeholder="admin">
+                    <small>Used for settings UI login</small>
+                </div>
+                <div class="input-group">
+                    <label>Admin Password</label>
+                    <input type="password" id="admin_password" placeholder="Password">
+                    <small>⚠️ Change default password immediately!</small>
                 </div>
             </div>
 
@@ -391,4 +407,5 @@
 
     <script src="/static/settings.js"></script>
 </body>
+
 </html>

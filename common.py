@@ -151,7 +151,7 @@ def request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) ->
 def directus_get(endpoint: str) -> Dict:
     """GET request to Directus"""
     try:
-        base_url = get_setting('directus_url', 'https://admin.gadgeek.in')
+        base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
         url = f"{base_url}{endpoint}"
@@ -170,7 +170,7 @@ def directus_get(endpoint: str) -> Dict:
 def directus_post(endpoint: str, data: Dict) -> Dict:
     """POST request to Directus"""
     try:
-        base_url = get_setting('directus_url', 'https://admin.gadgeek.in')
+        base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
         url = f"{base_url}{endpoint}"
@@ -189,7 +189,7 @@ def directus_post(endpoint: str, data: Dict) -> Dict:
 def directus_patch(endpoint: str, data: Dict) -> Dict:
     """PATCH request to Directus"""
     try:
-        base_url = get_setting('directus_url', 'https://admin.gadgeek.in')
+        base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
         url = f"{base_url}{endpoint}"
@@ -208,7 +208,7 @@ def directus_patch(endpoint: str, data: Dict) -> Dict:
 def directus_delete(endpoint: str) -> bool:
     """DELETE request to Directus"""
     try:
-        base_url = get_setting('directus_url', 'https://admin.gadgeek.in')
+        base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
         url = f"{base_url}{endpoint}"
@@ -225,7 +225,7 @@ def directus_delete(endpoint: str) -> bool:
 def upload_file_to_directus(file_path: str = None, file_url: str = None, title: str = None) -> Optional[str]:
     """Upload file to Directus and return UUID"""
     try:
-        base_url = get_setting('directus_url', 'https://admin.gadgeek.in')
+        base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
         headers = {}

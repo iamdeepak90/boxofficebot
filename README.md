@@ -1,6 +1,6 @@
 # Box Office Automation System
 
-Automated box office tracking and content generation system for Gadgeek.
+Automated box office tracking and content generation system for BoxOfficeTalk.
 
 ## 📁 File Structure
 ```
@@ -61,7 +61,7 @@ Name: box-office-server
 Command: gunicorn -w 2 -b 0.0.0.0:8000 server:app
 Port: 8000
 Public Port: 8000
-Domain: bot.gadgeek.in
+Domain: bot.boxofficetalk.com
 Health Check: /health
 Restart: Always
 ```
@@ -77,7 +77,7 @@ r = redis.Redis(host='xs444swscgwwk48owwgow8oo', port=6379, db=0, decode_respons
 
 settings = {
     # System
-    'directus_url': 'https://admin.gadgeek.in',
+    'directus_url': 'https://admin.boxofficetalk.com',
     'directus_token': '',
     'slack_bot_token': 'xoxb-YOUR-TOKEN',
     'slack_channel_id': 'C01234567',
@@ -209,11 +209,11 @@ Write 900-word review with:
 ### **Step 6: Configure Slack**
 
 1. Go to Slack App Settings → Interactivity & Shortcuts
-2. Set Request URL: `https://bot.gadgeek.in/slack/interactions`
+2. Set Request URL: `https://bot.boxofficetalk.com/slack/interactions`
 
 ### **Step 7: Access Settings UI**
 
-1. Open: `https://bot.gadgeek.in/settings`
+1. Open: `https://bot.boxofficetalk.com/settings`
 2. Configure all settings
 3. Add RSS feeds
 4. Save

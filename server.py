@@ -168,7 +168,7 @@ def serve_static(filename):
 def get_system_settings():
     """Get system settings"""
     return jsonify({
-        'directus_url': get_setting('directus_url', 'https://admin.gadgeek.in'),
+        'directus_url': get_setting('directus_url', 'https://admin.boxofficetalk.com'),
         'directus_token': get_setting('directus_token', ''),
         'slack_bot_token': get_setting('slack_bot_token', ''),
         'slack_channel_id': get_setting('slack_channel_id', ''),

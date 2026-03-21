@@ -4,304 +4,848 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Box Office System - Settings</title>
-    <link rel="stylesheet" href="/static/settings.css">
+    <style>
+        :root {
+            /* Light Theme Variables */
+            --bg-base: #f4f4f9;
+            --bg-panel: #ffffff;
+            --card-bg: #ffffff;
+            --card-hover: #fafafa;
+            --border: #e2e8f0;
+            --border-hover: #cbd5e1;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --text-soft: #64748b;
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --primary-glow: rgba(79, 70, 229, 0.15);
+            --success: #10b981;
+            --danger: #ef4444;
+            --radius-xl: 20px;
+            --radius-lg: 16px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04);
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(circle at 15% 0%, rgba(79, 70, 229, 0.04) 0%, transparent 40%),
+                radial-gradient(circle at 85% 100%, rgba(16, 185, 129, 0.03) 0%, transparent 40%);
+            color: var(--text-main);
+            line-height: 1.5;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+
+        /* Header Styles */
+        header {
+            margin-bottom: 40px;
+            text-align: center;
+        }
+
+        header .header-title-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        header h1 {
+            font-size: 2.25rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: var(--text-main);
+        }
+
+        header svg {
+            color: var(--primary);
+            width: 36px;
+            height: 36px;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+        }
+
+        /* Tabs Navigation (Segmented Control Style) */
+        .tabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 32px;
+            padding: 6px;
+            background: #e2e8f0;
+            border-radius: var(--radius-md);
+            overflow-x: auto;
+            position: sticky;
+            top: 20px;
+            z-index: 50;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .tabs::-webkit-scrollbar { display: none; }
+
+        .tab {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            appearance: none;
+            padding: 12px 16px;
+            background: transparent;
+            border: none;
+            border-radius: var(--radius-sm);
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .tab svg {
+            width: 18px;
+            height: 18px;
+            opacity: 0.8;
+        }
+
+        .tab:hover {
+            color: var(--text-main);
+        }
+
+        .tab.active {
+            color: var(--text-main);
+            background: var(--bg-panel);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .tab.active svg {
+            color: var(--primary);
+            opacity: 1;
+        }
+
+        /* Panel & Card Layout */
+        .panel {
+            display: none;
+            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .panel.active { display: block; }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .panel-header {
+            margin-bottom: 24px;
+            padding-left: 8px;
+        }
+
+        .panel-header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-main);
+        }
+
+        .panel-header .description {
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow-sm);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-hover);
+            box-shadow: var(--shadow-md);
+        }
+
+        .card h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-main);
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .card h2 svg {
+            color: var(--primary);
+            width: 22px;
+            height: 22px;
+        }
+
+        /* Form Inputs */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .grid-2 .input-group, .grid-3 .input-group, .grid-4 .input-group {
+            margin-bottom: 0;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .input-group small {
+            display: block;
+            margin-top: 6px;
+            color: var(--text-soft);
+            font-size: 0.8rem;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 12px 16px;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-main);
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: #94a3b8;
+        }
+
+        input:hover, textarea:hover {
+            border-color: var(--border-hover);
+            background: #f1f5f9;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-glow);
+            background: #ffffff;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.9rem;
+        }
+
+        /* Nested Stages in AI Models */
+        .stage-container {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .stage-container:last-child {
+            margin-bottom: 0;
+        }
+
+        .card h3 {
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+        }
+
+        .card h3::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+            margin-left: 12px;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: var(--primary);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px -1px var(--primary-glow);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 12px -2px var(--primary-glow);
+        }
+
+        .btn-primary svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .btn-large {
+            padding: 14px 32px;
+            font-size: 1rem;
+            border-radius: var(--radius-md);
+            width: auto;
+            min-width: 250px;
+        }
+
+        .save-section {
+            display: flex;
+            justify-content: center;
+            margin-top: 32px;
+            padding-bottom: 20px;
+        }
+
+        /* Feeds Lists */
+        .feed-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            margin-bottom: 12px;
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            font-size: 0.9rem;
+            color: var(--text-main);
+        }
+        
+        .feed-input-wrapper {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        /* Notification */
+        .notification {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 16px 24px;
+            border-radius: var(--radius-md);
+            background: var(--bg-panel);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transform: translateY(150%);
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 1000;
+        }
+
+        .notification.show {
+            transform: translateY(0);
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .grid-4 { grid-template-columns: 1fr 1fr; }
+        }
+        @media (max-width: 768px) {
+            .grid-2, .grid-3, .grid-4, .feed-input-wrapper {
+                grid-template-columns: 1fr;
+                flex-direction: column;
+            }
+            .card { padding: 24px; }
+            .tabs { padding: 8px; border-radius: var(--radius-lg); }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>⚙️ Box Office System Settings</h1>
+            <div class="header-title-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <h1>Box Office Settings</h1>
+            </div>
             <p class="subtitle">Configure your automated box office tracking system</p>
         </header>
 
         <!-- Tab Navigation -->
         <nav class="tabs">
-            <button class="tab active" data-tab="system">System</button>
-            <button class="tab" data-tab="rss_feeds">RSS Feeds</button>
-            <button class="tab" data-tab="ai_models">AI Models</button>
-            <button class="tab" data-tab="scraper">Scraper</button>
-            <button class="tab" data-tab="advanced">Advanced</button>
+            <button class="tab active" data-tab="system">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                System
+            </button>
+            <button class="tab" data-tab="rss_feeds">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+                RSS Feeds
+            </button>
+            <button class="tab" data-tab="ai_models">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+                AI Models
+            </button>
+            <button class="tab" data-tab="scraper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                Scraper
+            </button>
+            <button class="tab" data-tab="advanced">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+                Advanced
+            </button>
         </nav>
 
         <!-- System Panel -->
         <section id="system" class="panel active">
-            <h1>System Configuration</h1>
+            <div class="panel-header">
+                <h1>System Configuration</h1>
+                <p class="description">Manage your core integrations and API keys.</p>
+            </div>
 
             <div class="card">
-                <h2>📊 Directus CMS</h2>
-                <div class="input-group">
-                    <label>Directus URL</label>
-                    <input type="text" id="directus_url" placeholder="https://admin.boxofficetalk.com">
-                </div>
-                <div class="input-group">
-                    <label>Directus Token (Optional)</label>
-                    <input type="password" id="directus_token" placeholder="Leave empty if public access enabled">
-                    <small>Not required if collections have Public Access</small>
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                    Directus CMS
+                </h2>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>Directus URL</label>
+                        <input type="text" id="directus_url" placeholder="https://admin.boxofficetalk.com">
+                    </div>
+                    <div class="input-group">
+                        <label>Directus Token (Optional)</label>
+                        <input type="password" id="directus_token" placeholder="Leave empty if public access enabled">
+                        <small>Not required if collections have Public Access</small>
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>💬 Slack Integration</h2>
-                <div class="input-group">
-                    <label>Slack Bot Token</label>
-                    <input type="password" id="slack_bot_token" placeholder="xoxb-...">
-                </div>
-                <div class="input-group">
-                    <label>Slack Channel ID</label>
-                    <input type="text" id="slack_channel_id" placeholder="C01234567">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                    Slack Integration
+                </h2>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>Slack Bot Token</label>
+                        <input type="password" id="slack_bot_token" placeholder="xoxb-...">
+                    </div>
+                    <div class="input-group">
+                        <label>Slack Channel ID</label>
+                        <input type="text" id="slack_channel_id" placeholder="C01234567">
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>🔑 API Keys</h2>
-                <div class="input-group">
-                    <label>OpenRouter API Key</label>
-                    <input type="password" id="openrouter_api_key" placeholder="sk-or-v1-...">
-                </div>
-                <div class="input-group">
-                    <label>Tavily API Key</label>
-                    <input type="password" id="tavily_api_key" placeholder="tvly-...">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                    API Keys
+                </h2>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>OpenRouter API Key</label>
+                        <input type="password" id="openrouter_api_key" placeholder="sk-or-v1-...">
+                    </div>
+                    <div class="input-group">
+                        <label>Tavily API Key</label>
+                        <input type="password" id="tavily_api_key" placeholder="tvly-...">
+                    </div>
                 </div>
             </div>
 
             <div class="save-section">
                 <button onclick="saveSystemSettings()" class="btn-primary btn-large">
-                    💾 Save System Settings
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save System Settings
                 </button>
             </div>
         </section>
 
         <!-- RSS Feeds Panel -->
         <section id="rss_feeds" class="panel">
-            <h1>RSS Feeds Management</h1>
+            <div class="panel-header">
+                <h1>RSS Feeds Management</h1>
+                <p class="description">Configure sources for automation ingest.</p>
+            </div>
 
             <div class="card">
-                <h2>📰 News RSS Feeds</h2>
-                <p class="description">Feeds for general entertainment news</p>
-                <div id="news-feeds-list"></div>
-                <div class="input-group">
-                    <label>Add News Feed</label>
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path></svg>
+                    News RSS Feeds
+                </h2>
+                <p class="description" style="margin-bottom: 20px;">Feeds for general entertainment news</p>
+                <div id="news-feeds-list">
+                    <div class="feed-item" style="color: var(--text-soft); font-style: italic;">No news feeds configured.</div>
+                </div>
+                <div class="feed-input-wrapper">
                     <input type="text" id="new_news_feed_url" placeholder="https://example.com/rss">
-                    <button onclick="addNewsFeed()" class="btn-primary">Add Feed</button>
+                    <button onclick="addNewsFeed()" class="btn-primary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        Add Feed
+                    </button>
                 </div>
             </div>
 
             <div class="card">
-                <h2>📈 Box Office RSS Feeds</h2>
-                <p class="description">Feeds specifically for box office news</p>
-                <div id="box-office-feeds-list"></div>
-                <div class="input-group">
-                    <label>Add Box Office Feed</label>
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    Box Office RSS Feeds
+                </h2>
+                <p class="description" style="margin-bottom: 20px;">Feeds specifically for box office news</p>
+                <div id="box-office-feeds-list">
+                    <div class="feed-item" style="color: var(--text-soft); font-style: italic;">No box office feeds configured.</div>
+                </div>
+                <div class="feed-input-wrapper">
                     <input type="text" id="new_box_office_feed_url" placeholder="https://example.com/rss">
-                    <button onclick="addBoxOfficeFeed()" class="btn-primary">Add Feed</button>
+                    <button onclick="addBoxOfficeFeed()" class="btn-primary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        Add Feed
+                    </button>
                 </div>
             </div>
         </section>
 
         <!-- AI Models Panel -->
         <section id="ai_models" class="panel">
-            <h1>AI Models Configuration</h1>
-            <p class="description">All models use OpenRouter API</p>
+            <div class="panel-header">
+                <h1>AI Models Configuration</h1>
+                <p class="description">Manage prompts, temperatures, and model endpoints via OpenRouter.</p>
+            </div>
 
             <div class="card">
-                <h2>🔍 Budget Model (RSS Pre-check)</h2>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="budget_model" value="openai/gpt-4o-mini">
-                    <small>Recommended: openai/gpt-4o-mini</small>
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="budget_temperature" step="0.1" min="0" max="2" value="0.3">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="budget_max_tokens" min="100" max="2000" value="500">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    Budget Model (RSS Pre-check)
+                </h2>
+                <div class="grid-3">
+                    <div class="input-group">
+                        <label>Model</label>
+                        <input type="text" id="budget_model" value="openai/gpt-4o-mini">
+                        <small>Rec: openai/gpt-4o-mini</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Temperature</label>
+                        <input type="number" id="budget_temperature" step="0.1" min="0" max="2" value="0.3">
+                    </div>
+                    <div class="input-group">
+                        <label>Max Tokens</label>
+                        <input type="number" id="budget_max_tokens" min="100" max="2000" value="500">
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>📰 News Articles (5 Stages)</h2>
-                <h3>Stage 1: Generation</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="news_generation_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="news_generation_temperature" step="0.1" min="0" max="2" value="0.7">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="news_generation_max_tokens" min="1000" max="16000" value="8000">
-                </div>
-
-                <h3>Stage 2: Humanization</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="news_humanize_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="news_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="news_humanize_max_tokens" min="1000" max="16000" value="8000">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    News Articles (5 Stages)
+                </h2>
+                
+                <div class="stage-container">
+                    <h3>Stage 1: Generation</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="news_generation_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="news_generation_temperature" step="0.1" min="0" max="2" value="0.7">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="news_generation_max_tokens" min="1000" max="16000" value="8000">
+                        </div>
+                    </div>
                 </div>
 
-                <h3>Stage 3: SEO</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="news_seo_model" value="openai/gpt-4-turbo">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="news_seo_temperature" step="0.1" min="0" max="2" value="0.5">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="news_seo_max_tokens" min="1000" max="8000" value="4000">
+                <div class="stage-container">
+                    <h3>Stage 2: Humanization</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="news_humanize_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="news_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="news_humanize_max_tokens" min="1000" max="16000" value="8000">
+                        </div>
+                    </div>
                 </div>
 
-                <h3>Stage 4: Image Generation</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="news_image_model" value="black-forest-labs/flux-schnell">
+                <div class="stage-container">
+                    <h3>Stage 3: SEO</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="news_seo_model" value="openai/gpt-4-turbo">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="news_seo_temperature" step="0.1" min="0" max="2" value="0.5">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="news_seo_max_tokens" min="1000" max="8000" value="4000">
+                        </div>
+                    </div>
                 </div>
-                <div class="input-group">
-                    <label>Image Width</label>
-                    <input type="number" id="news_image_width" min="256" max="2048" value="1024">
-                </div>
-                <div class="input-group">
-                    <label>Image Height</label>
-                    <input type="number" id="news_image_height" min="256" max="2048" value="768">
+
+                <div class="stage-container">
+                    <h3>Stage 4: Image Generation</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="news_image_model" value="black-forest-labs/flux-schnell">
+                        </div>
+                        <div class="input-group">
+                            <label>Image Width</label>
+                            <input type="number" id="news_image_width" min="256" max="2048" value="1024">
+                        </div>
+                        <div class="input-group">
+                            <label>Image Height</label>
+                            <input type="number" id="news_image_height" min="256" max="2048" value="768">
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>📝 Movie Plot (2 Stages)</h2>
-                <h3>Stage 1: Generation</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="plot_generation_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="plot_generation_temperature" step="0.1" min="0" max="2" value="0.7">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="plot_generation_max_tokens" min="500" max="4000" value="2000">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    Movie Plot (2 Stages)
+                </h2>
+                <div class="stage-container">
+                    <h3>Stage 1: Generation</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="plot_generation_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="plot_generation_temperature" step="0.1" min="0" max="2" value="0.7">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="plot_generation_max_tokens" min="500" max="4000" value="2000">
+                        </div>
+                    </div>
                 </div>
 
-                <h3>Stage 2: Humanization</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="plot_humanize_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="plot_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="plot_humanize_max_tokens" min="500" max="4000" value="2000">
+                <div class="stage-container">
+                    <h3>Stage 2: Humanization</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="plot_humanize_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="plot_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="plot_humanize_max_tokens" min="500" max="4000" value="2000">
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>📊 Daily Box Office (3 Stages)</h2>
-                <h3>Stage 1: Generation</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="daily_generation_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="daily_generation_temperature" step="0.1" min="0" max="2" value="0.7">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="daily_generation_max_tokens" min="1000" max="8000" value="4000">
-                </div>
-
-                <h3>Stage 2: Humanization</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="daily_humanize_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="daily_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="daily_humanize_max_tokens" min="1000" max="8000" value="4000">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                    Daily Box Office (3 Stages)
+                </h2>
+                
+                <div class="stage-container">
+                    <h3>Stage 1: Generation</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="daily_generation_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="daily_generation_temperature" step="0.1" min="0" max="2" value="0.7">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="daily_generation_max_tokens" min="1000" max="8000" value="4000">
+                        </div>
+                    </div>
                 </div>
 
-                <h3>Stage 3: SEO</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="daily_seo_model" value="openai/gpt-4-turbo">
+                <div class="stage-container">
+                    <h3>Stage 2: Humanization</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="daily_humanize_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="daily_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="daily_humanize_max_tokens" min="1000" max="8000" value="4000">
+                        </div>
+                    </div>
                 </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="daily_seo_temperature" step="0.1" min="0" max="2" value="0.5">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="daily_seo_max_tokens" min="1000" max="4000" value="2000">
+
+                <div class="stage-container">
+                    <h3>Stage 3: SEO</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="daily_seo_model" value="openai/gpt-4-turbo">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="daily_seo_temperature" step="0.1" min="0" max="2" value="0.5">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="daily_seo_max_tokens" min="1000" max="4000" value="2000">
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>🎬 Hub Pages (3 Stages)</h2>
-                <h3>Stage 1: Generation</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="hub_generation_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="hub_generation_temperature" step="0.1" min="0" max="2" value="0.7">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="hub_generation_max_tokens" min="1000" max="8000" value="4000">
-                </div>
-
-                <h3>Stage 2: Humanization</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="hub_humanize_model" value="anthropic/claude-3.5-sonnet">
-                </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="hub_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="hub_humanize_max_tokens" min="1000" max="8000" value="4000">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Hub Pages (3 Stages)
+                </h2>
+                
+                <div class="stage-container">
+                    <h3>Stage 1: Generation</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="hub_generation_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="hub_generation_temperature" step="0.1" min="0" max="2" value="0.7">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="hub_generation_max_tokens" min="1000" max="8000" value="4000">
+                        </div>
+                    </div>
                 </div>
 
-                <h3>Stage 3: SEO</h3>
-                <div class="input-group">
-                    <label>Model</label>
-                    <input type="text" id="hub_seo_model" value="openai/gpt-4-turbo">
+                <div class="stage-container">
+                    <h3>Stage 2: Humanization</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="hub_humanize_model" value="anthropic/claude-3.5-sonnet">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="hub_humanize_temperature" step="0.1" min="0" max="2" value="0.8">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="hub_humanize_max_tokens" min="1000" max="8000" value="4000">
+                        </div>
+                    </div>
                 </div>
-                <div class="input-group">
-                    <label>Temperature</label>
-                    <input type="number" id="hub_seo_temperature" step="0.1" min="0" max="2" value="0.5">
-                </div>
-                <div class="input-group">
-                    <label>Max Tokens</label>
-                    <input type="number" id="hub_seo_max_tokens" min="1000" max="4000" value="2000">
+
+                <div class="stage-container">
+                    <h3>Stage 3: SEO</h3>
+                    <div class="grid-3">
+                        <div class="input-group">
+                            <label>Model</label>
+                            <input type="text" id="hub_seo_model" value="openai/gpt-4-turbo">
+                        </div>
+                        <div class="input-group">
+                            <label>Temperature</label>
+                            <input type="number" id="hub_seo_temperature" step="0.1" min="0" max="2" value="0.5">
+                        </div>
+                        <div class="input-group">
+                            <label>Max Tokens</label>
+                            <input type="number" id="hub_seo_max_tokens" min="1000" max="4000" value="2000">
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="card">
-                <h2>🔎 Tavily Research</h2>
-                <div class="input-group">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+                    Tavily Research
+                </h2>
+                <div class="input-group" style="max-width: 300px;">
                     <label>Max Results</label>
                     <input type="number" id="tavily_max_results" min="1" max="10" value="5">
                     <small>Number of search results to include</small>
@@ -310,85 +854,99 @@
 
             <div class="save-section">
                 <button onclick="saveAIModelsSettings()" class="btn-primary btn-large">
-                    💾 Save AI Models Settings
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save AI Models Settings
                 </button>
             </div>
         </section>
 
         <!-- Scraper Panel -->
         <section id="scraper" class="panel">
-            <h1>Scraper Configuration</h1>
+            <div class="panel-header">
+                <h1>Scraper Configuration</h1>
+                <p class="description">Control crawl frequency and proxy settings.</p>
+            </div>
 
             <div class="card">
-                <h2>🕷️ Sacnilk Scraper</h2>
-                <div class="input-group">
-                    <label>Scraper Interval (hours)</label>
-                    <input type="number" id="scraper_interval_hours" min="1" max="24" value="4">
-                    <small>How often to scrape Sacnilk</small>
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><path d="M13 15h3a2 2 0 0 0 2-2v-2"></path><path d="M18 9h-5"></path></svg>
+                    Sacnilk Scraper
+                </h2>
+                <div class="grid-2">
+                    <div class="input-group">
+                        <label>Scraper Interval (hours)</label>
+                        <input type="number" id="scraper_interval_hours" min="1" max="24" value="4">
+                        <small>How often to scrape Sacnilk</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Max Concurrent Scrapes</label>
+                        <input type="number" id="max_concurrent_scrapes" min="1" max="20" value="5">
+                    </div>
                 </div>
-                <div class="input-group">
-                    <label>Max Concurrent Scrapes</label>
-                    <input type="number" id="max_concurrent_scrapes" min="1" max="20" value="5">
-                </div>
-                <div class="input-group">
+                <div class="input-group" style="margin-top: 24px;">
                     <label>Proxies (JSON Array)</label>
-                    <textarea id="scraper_proxies" rows="4" placeholder='["http://user:pass@proxy:8080"]'></textarea>
+                    <textarea id="scraper_proxies" placeholder='["http://user:pass@proxy:8080"]'></textarea>
                     <small>Leave empty for direct connection</small>
                 </div>
             </div>
 
             <div class="save-section">
                 <button onclick="saveScraperSettings()" class="btn-primary btn-large">
-                    💾 Save Scraper Settings
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save Scraper Settings
                 </button>
             </div>
         </section>
 
         <!-- Advanced Panel -->
         <section id="advanced" class="panel">
-            <h1>Advanced Settings</h1>
-
-            <div class="card">
-                <h2>⏱️ Intervals</h2>
-                <div class="input-group">
-                    <label>RSS Check Interval (minutes)</label>
-                    <input type="number" id="rss_check_interval_minutes" min="1" max="60" value="5">
-                </div>
+            <div class="panel-header">
+                <h1>Advanced Settings</h1>
+                <p class="description">Fine-tune background workers and thresholds.</p>
             </div>
 
+            <!-- Consolidated Advanced Row -->
             <div class="card">
-                <h2>🔍 Deduplication</h2>
-                <div class="input-group">
-                    <label>Fuzzy Match Threshold (%)</label>
-                    <input type="number" id="fuzzy_match_threshold" min="50" max="100" value="90">
-                    <small>Title similarity threshold (90 = 90% similar)</small>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>📦 Backfill</h2>
-                <div class="input-group">
-                    <label>Batch Size</label>
-                    <input type="number" id="backfill_batch_size" min="1" max="20" value="5">
-                    <small>How many backfill AI jobs to queue immediately</small>
-                </div>
-                <div class="input-group">
-                    <label>Delay (seconds)</label>
-                    <input type="number" id="backfill_delay_seconds" min="30" max="600" value="120">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    Advanced Operations
+                </h2>
+                <div class="grid-4">
+                    <div class="input-group">
+                        <label>RSS Check Interval</label>
+                        <input type="number" id="rss_check_interval_minutes" min="1" max="60" value="5">
+                        <small>In minutes</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Fuzzy Match</label>
+                        <input type="number" id="fuzzy_match_threshold" min="50" max="100" value="90">
+                        <small>Similarity threshold (%)</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Backfill Batch Size</label>
+                        <input type="number" id="backfill_batch_size" min="1" max="20" value="5">
+                        <small>Jobs to queue directly</small>
+                    </div>
+                    <div class="input-group">
+                        <label>Backfill Delay</label>
+                        <input type="number" id="backfill_delay_seconds" min="30" max="600" value="120">
+                        <small>In seconds</small>
+                    </div>
                 </div>
             </div>
 
             <div class="save-section">
                 <button onclick="saveAdvancedSettings()" class="btn-primary btn-large">
-                    💾 Save Advanced Settings
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Save Advanced Settings
                 </button>
             </div>
         </section>
 
-        <!-- Notification Toast -->
         <div id="notification" class="notification"></div>
     </div>
 
-    <script src="/static/settings.js"></script>
+    <!-- Your exact JS logic is successfully connected here -->
+    <script src="/settings.js"></script>
 </body>
 </html>

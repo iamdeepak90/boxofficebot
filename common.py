@@ -31,17 +31,28 @@ logger = logging.getLogger(__name__)
 # REDIS CONNECTION
 # ============================================================================
 
+REDIS_HOST = "y3umvc6p9q4jxkkknywk67zm"
+REDIS_PORT = 6379
+REDIS_DB = 0
+REDIS_USERNAME = "boxoffice"
+REDIS_PASSWORD = "wOvmuJ4wMt7UWgcVa58J1x6uMj0SDbQE1Yw8kTwNEQvhpzk08wgfCv2TWrPkm6Pe"
+
 try:
-    redis_client = redis.from_url(
-        "redis://boxoffice:wOvmuJ4wMt7UWgcVa58J1x6uMj0SDbQE1Yw8kTwNEQvhpzk08wgfCv2TWrPkm6Pe@y3umvc6p9q4jxkkknywk67zm:6379/0",
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        db=REDIS_DB,
+        username=REDIS_USERNAME,
+        password=REDIS_PASSWORD,
         decode_responses=True,
-        socket_connect_timeout=5,
-        socket_timeout=5
+        socket_connect_timeout=10,
+        socket_timeout=10,
     )
     redis_client.ping()
-    logger.info("✅ Redis connected successfully")
+    logger.info(f"✅ Redis connected successfully to {REDIS_HOST}:{REDIS_PORT}")
 except Exception as e:
     logger.error(f"❌ Redis connection failed: {e}")
+    logger.error(f"Host: {REDIS_HOST}, Port: {REDIS_PORT}, Username: {REDIS_USERNAME}")
     redis_client = None
 
 # ============================================================================

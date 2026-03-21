@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 
 try:
     redis_client = redis.Redis(
-        host=REDIS_HOST,
-        port=REDIS_PORT,
-        db=REDIS_DB,
+        host="y3umvc6p9q4jxkkknywk67zm",
+        port=6379,
+        db=0,
         decode_responses=True,
         socket_connect_timeout=5,
         socket_timeout=5

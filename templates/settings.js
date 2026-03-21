@@ -79,6 +79,7 @@ function loadSystemSettings() {
             setInputValue('directus_token', data.directus_token);
             setInputValue('slack_bot_token', data.slack_bot_token);
             setInputValue('slack_channel_id', data.slack_channel_id);
+            setInputValue('slack_signing_secret', data.slack_signing_secret);
             setInputValue('openrouter_api_key', data.openrouter_api_key);
             setInputValue('tavily_api_key', data.tavily_api_key);
         })
@@ -94,6 +95,7 @@ function saveSystemSettings() {
         directus_token: getInputValue('directus_token'),
         slack_bot_token: getInputValue('slack_bot_token'),
         slack_channel_id: getInputValue('slack_channel_id'),
+        slack_signing_secret: getInputValue('slack_signing_secret'),
         openrouter_api_key: getInputValue('openrouter_api_key'),
         tavily_api_key: getInputValue('tavily_api_key')
     };

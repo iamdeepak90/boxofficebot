@@ -7,6 +7,8 @@ from flask import Flask, request, jsonify, send_from_directory
 from common import *
 import json
 import os
+import hmac
+import hashlib
 
 app = Flask(__name__, static_folder='templates', template_folder='templates')
 
@@ -61,9 +63,60 @@ def parse_slack_payload(payload: Dict) -> Optional[Dict]:
         return None
 
 
+# ============================================================================
+# SLACK SIGNATURE VERIFICATION
+# ============================================================================
+
+def verify_slack_signature(request):
+    """Verify Slack request signature"""
+    try:
+        slack_signing_secret = get_setting('slack_signing_secret', '')
+        
+        if not slack_signing_secret:
+            logger.warning("Slack signing secret not configured")
+            return True  # Allow if not configured (for initial setup)
+        
+        # Get headers
+        timestamp = request.headers.get('X-Slack-Request-Timestamp', '')
+        signature = request.headers.get('X-Slack-Signature', '')
+        
+        if not timestamp or not signature:
+            logger.error("Missing Slack signature headers")
+            return False
+        
+        # Check timestamp (prevent replay attacks)
+        import time as time_module
+        current_timestamp = int(time_module.time())
+        if abs(current_timestamp - int(timestamp)) > 60 * 5:  # 5 minutes
+            logger.error("Slack request timestamp too old")
+            return False
+        
+        # Verify signature
+        sig_basestring = f"v0:{timestamp}:{request.get_data(as_text=True)}"
+        my_signature = 'v0=' + hmac.new(
+            slack_signing_secret.encode(),
+            sig_basestring.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(my_signature, signature):
+            logger.error("Invalid Slack signature")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Slack signature verification failed: {e}")
+        return False
+
+
 @app.route('/slack/interactions', methods=['POST'])
 def slack_interactions():
     """Handle Slack interactions (Approve/Reject only)"""
+    if not verify_slack_signature(request):
+        logger.error("Invalid Slack signature - rejecting request")
+        return jsonify({"error": "Invalid signature"}), 403
+
     try:
         payload_str = request.form.get('payload')
         if not payload_str:
@@ -172,6 +225,7 @@ def get_system_settings():
         'directus_token': get_setting('directus_token', ''),
         'slack_bot_token': get_setting('slack_bot_token', ''),
         'slack_channel_id': get_setting('slack_channel_id', ''),
+        'slack_signing_secret': get_setting('slack_signing_secret', ''),
         'openrouter_api_key': get_setting('openrouter_api_key', ''),
         'tavily_api_key': get_setting('tavily_api_key', '')
     })

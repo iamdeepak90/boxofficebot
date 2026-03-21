@@ -15,7 +15,7 @@ lxml==4.9.3
 
 # Fuzzy Matching
 fuzzywuzzy==0.18.0
-python-Levenshtein==0.21.1
+Levenshtein
 
 # Scraping
 playwright==1.40.0

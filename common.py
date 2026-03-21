@@ -676,12 +676,50 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
         if not html:
             return []
         
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        # TODO: Adjust selectors based on actual HTML
+        soup = BeautifulSoup(html, "html.parser")
         movies = []
-        # Placeholder parsing logic
-        
+
+        container = soup.find("div", id="upcomingMoviesContainer")
+        if not container:
+            return []
+
+        movie_cards = container.select("a[href^='/movie/']")
+
+        for card in movie_cards:
+            href = (card.get("href") or "").strip()
+            if not href:
+                continue
+
+            title_tag = card.find("h3")
+            date_tag = card.find("div", class_="text-[10px] text-gray-300 font-medium")
+            img_tag = card.find("img")
+
+            title = title_tag.get_text(strip=True) if title_tag else None
+            release_date_raw = date_tag.get_text(strip=True) if date_tag else None
+            poster_url = img_tag.get("src") if img_tag else None
+
+            genres = card.get("data-genres", "").strip()
+            languages = card.get("data-languages", "").strip()
+
+            release_date = None
+            if release_date_raw:
+                try:
+                    release_date = datetime.strptime(release_date_raw, "%b %d, %Y").date().isoformat()
+                except ValueError:
+                    release_date = release_date_raw
+
+            movies.append({
+                "title": title,
+                "movie_url": urljoin("https://sacnilk.com", href),
+                "slug": href.strip("/").split("/")[-1],
+                "poster_url": poster_url,
+                "image_alt": title,
+                "release_date": release_date,
+                "release_date_raw": release_date_raw,
+                "languages": [x.strip() for x in languages.split(",")] if languages else [],
+                "genres": [x.strip() for x in genres.split(",")] if genres else [],
+            })
+
         return movies
         
     except Exception as e:

@@ -87,7 +87,7 @@ def discover_new_movies():
                     'title': title,
                     'slug': movie_data.get('slug'),
                     'release_date': movie_data.get('release_date'),
-                    'language': movie_data.get('languages', []),
+                    'language': movie_data.get('languages', ''),
                     'genre': movie_data.get('genres', ''),
                     'sacnilk_source_url': sacnilk_url,
                     'poster': movie_data.get('poster'),
@@ -98,7 +98,7 @@ def discover_new_movies():
                     'ott_platform': movie_data.get('ott_platform'),
                     'ott_release_date': movie_data.get('ott_release_date'),
                     'cast_crew': cast_ids,
-                    'tags': movie_data.get('tags', []) + movie_data.get('genres', [])
+                    'tags': movie_data.get('tags', [])
                 }
                 
                 result = directus_post('/items/movies', create_data)

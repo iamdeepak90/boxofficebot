@@ -724,9 +724,6 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
             release_date_raw = date_tag.get_text(strip=True) if date_tag else None
             poster_url = img_tag.get("src") if img_tag else None
 
-            genres = card.get("data-genres", "").strip()
-            languages = card.get("data-languages", "").strip()
-
             release_date = None
             if release_date_raw:
                 try:
@@ -742,8 +739,8 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
                 "image_alt": title,
                 "release_date": release_date,
                 "release_date_raw": release_date_raw,
-                "languages": [x.strip() for x in languages.split(",")] if languages else [],
-                "genres": [x.strip() for x in genres.split(",")] if genres else [],
+                "languages": card.get("data-languages", "").strip(),
+                "genres": card.get("data-genres", "").strip(),
             })
 
         return movies
@@ -991,7 +988,7 @@ def _extract_crew(soup: BeautifulSoup) -> list:
 
 
 def _extract_tags(soup: BeautifulSoup) -> list:
-    """Extract movie tags"""
+    """Extract movie tags - clean extraction only"""
     section = _find_section_from_label(soup, r"^Tags$|Tags")
     if not section:
         return []
@@ -999,19 +996,33 @@ def _extract_tags(soup: BeautifulSoup) -> list:
     tags = []
     seen = set()
     
-    for a in section.find_all("a", href=True):
-        href = a.get("href", "").strip()
+    # Only extract <a> with class="tag"
+    for a in section.find_all("a", class_="tag", href=True):
         name = _text(a)
         
-        if not name or "/tag/" not in href:
+        if not name:
             continue
         
-        if name.lower() in seen:
+        # Clean and validate
+        name = name.strip()
+        
+        # Skip garbage
+        if (
+            len(name) < 2 or 
+            len(name) > 50 or
+            name.startswith(('http', '/', '#'))
+        ):
             continue
-        seen.add(name.lower())
+        
+        # Deduplicate
+        name_lower = name.lower()
+        if name_lower in seen:
+            continue
+        
+        seen.add(name_lower)
         tags.append(name)
     
-    return tags
+    return tags[:20]  # Max 20 tags
 
 # ============================================================================
 # MOVIE & PEOPLE HELPERS

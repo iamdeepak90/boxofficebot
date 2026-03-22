@@ -1,6 +1,5 @@
 """
-scheduler.py - All scheduled automation tasks
-Runs:
+scheduler.py - All scheduled automation tasks Runs:
 - 00:05 AM: Discovery + Transition + Daily Pages
 - 03:00 AM: Audit estimates
 - Every 4 hours: Scraper

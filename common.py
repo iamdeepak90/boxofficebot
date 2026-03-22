@@ -597,13 +597,16 @@ def get_page_content(url: str) -> Optional[str]:
                 )
                 
                 page = context.new_page()
-                page.goto(url, wait_until='networkidle', timeout=30000)
+                
+                # Increased timeout + faster wait strategy
+                page.goto(url, wait_until='domcontentloaded', timeout=60000)
                 page.wait_for_timeout(2000)
                 
                 content = page.content()
                 browser.close()
                 
                 return content
+                
         except Exception as e:
             logger.error(f"Playwright failed: {e}")
     
@@ -617,6 +620,7 @@ def get_page_content(url: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Requests failed: {e}")
         return None
+        
 
 def parse_box_office_table(html_content: str) -> Optional[Dict]:
     """Parse Sacnilk box office table"""
@@ -758,13 +762,9 @@ def scrape_movie_details(sacnilk_url: str) -> Optional[Dict]:
         
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Extract summary
         summary = _extract_summary(soup)
-        # Extract runtime and CBFC
         runtime, cbfc_rating = _extract_runtime_and_cbfc(soup)
-        # Extract OTT info
         ott_platform, ott_release_date = _extract_ott(soup)
-        # Extract tags
         tags = _extract_tags(soup)
         cast_and_crew = _extract_cast_and_crew(soup)
         
@@ -774,7 +774,7 @@ def scrape_movie_details(sacnilk_url: str) -> Optional[Dict]:
             "cbfc_rating": cbfc_rating,
             "ott_platform": ott_platform,
             "ott_release_date": ott_release_date,
-            "casts": cast_and_crew,
+            "cast_and_crew": cast_and_crew,
             "tags": tags
         }
         
@@ -852,23 +852,41 @@ def _extract_summary(soup: BeautifulSoup) -> Optional[str]:
 
 
 def _extract_runtime_and_cbfc(soup: BeautifulSoup) -> tuple:
-    """Extract runtime and CBFC rating"""
+    """Extract runtime and CBFC rating from Key Details section"""
     runtime = None
     cbfc_rating = None
     
-    text_nodes = [t.strip() for t in soup.stripped_strings]
+    # Find "Key Details" section
+    key_details = soup.find("h4", string=re.compile(r"Key\s*Details", re.I))
+    if not key_details:
+        return None, None
     
-    for txt in text_nodes:
-        if runtime is None and re.search(r"\b\d+\s*h(?:\s*\d+\s*m)?\b|\b\d+\s*m\b", txt, re.I):
-            mins = _runtime_to_minutes(txt)
-            if mins:
-                runtime = mins
+    # Get parent container
+    container = key_details.find_parent("div")
+    if not container:
+        return None, None
+    
+    # Find all list items
+    list_items = container.find_all("li")
+    
+    for li in list_items:
+        text = li.get_text(" ", strip=True)
         
-        if cbfc_rating is None and txt.upper() in {"U", "U/A", "A", "S"}:
-            cbfc_rating = txt.upper()
+        # Extract Runtime
+        if "Runtime:" in text:
+            spans = li.find_all("span")
+            if len(spans) >= 2:
+                runtime_text = spans[-1].get_text(strip=True)
+                if runtime_text and runtime_text.upper() != "N/A":
+                    mins = _runtime_to_minutes(runtime_text)
+                    if mins:
+                        runtime = mins
         
-        if runtime and cbfc_rating:
-            break
+        # Extract CBFC Rating (as-is, no filter)
+        elif "CBFC Rating:" in text:
+            spans = li.find_all("span")
+            if len(spans) >= 2:
+                cbfc_rating = spans[-1].get_text(strip=True)
     
     return runtime, cbfc_rating
 

@@ -61,13 +61,13 @@ def discover_new_movies():
                 if details:
                     movie_data.update(details)
                 
-                # Process cast from details (merged casts from scrape_movie_details)
+                # Process cast & crew
                 cast_ids = []
-                for person_data in movie_data.get('casts', []):  # ← USED HERE
+                for person_data in movie_data.get('cast_and_crew', []):
                     person_id = get_or_create_person(
                         name=person_data['name'],
                         types=person_data['types'],
-                        sacnilk_url=person_data.get('sacnilk_url')
+                        sacnilk_url=person_data.get('sacnilk_url')  # ← MUST PASS THIS
                     )
                     if person_id:
                         cast_ids.append(person_id)

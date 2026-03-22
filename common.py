@@ -892,85 +892,66 @@ def _extract_ott(soup: BeautifulSoup) -> tuple:
 
 
 def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
-    """Extract all cast and crew members"""
+    """Extract cast and crew from 'Cast & Crew' section"""
+    
+    # Find "Cast & Crew" or "Cast and Crew" section
+    section = _find_section_from_label(soup, r"Cast\s*&?\s*Crew")
+    if not section:
+        return []
     
     all_people = {}  # name_lower -> person_data
+    current_role = "Cast"  # Default
     
-    # Extract Cast
-    cast_section = _find_section_from_label(soup, r"^Cast$|Cast")
-    if cast_section:
-        for a in cast_section.find_all("a", href=True):
-            href = a.get("href", "").strip()
-            name = _text(a)
+    for el in section.find_all(["div", "p", "span", "a", "h3", "h4", "h5", "strong", "b"]):
+        txt = _text(el)
+        if not txt:
+            continue
+        
+        txt_stripped = txt.strip()
+        
+        # Check if this is a role label (short text, no link, looks like header)
+        if el.name != "a" and len(txt_stripped) < 50:
+            # Likely a role: "Director", "Producer", "Cast", etc.
+            current_role = txt_stripped
+            continue
+        
+        # Extract person link (only from <a> tags with /tag/)
+        if el.name == "a":
+            href = el.get("href", "").strip()
             
-            if not name or "/tag/" not in href:
+            # Must have /tag/ in href
+            if not href or "/tag/" not in href:
                 continue
             
+            name = txt_stripped
             name_lower = name.lower()
             sacnilk_url = urljoin("https://sacnilk.com", href)
+            
+            # Skip if name looks weird
+            if len(name) < 2 or len(name) > 100:
+                continue
             
             if name_lower not in all_people:
                 all_people[name_lower] = {
                     "name": name,
                     "slug": slugify(name),
-                    "types": ["Actor"],
+                    "types": [current_role],
                     "sacnilk_url": sacnilk_url
                 }
             else:
-                if "Actor" not in all_people[name_lower]["types"]:
-                    all_people[name_lower]["types"].append("Actor")
-    
-    # Extract Crew
-    crew_section = _find_section_from_label(soup, r"^Crew$|Crew")
-    if crew_section:
-        current_role = "Crew"  # Default
-        
-        for el in crew_section.find_all(["div", "p", "span", "a", "h3", "h4"]):
-            txt = _text(el)
-            if not txt:
-                continue
-            
-            # Check if this looks like a role label (short text, not a link)
-            if el.name != "a" and len(txt) < 30:
-                current_role = txt  # Use raw value from HTML
-                continue
-            
-            # Extract person
-            if el.name == "a":
-                href = el.get("href", "").strip()
-                if "/tag/" not in href:
-                    continue
-                
-                name = txt
-                name_lower = name.lower()
-                sacnilk_url = urljoin("https://sacnilk.com", href)
-                
-                if name_lower not in all_people:
-                    all_people[name_lower] = {
-                        "name": name,
-                        "slug": slugify(name),
-                        "types": [current_role],
-                        "sacnilk_url": sacnilk_url
-                    }
-                else:
-                    # Merge types
-                    if current_role not in all_people[name_lower]["types"]:
-                        all_people[name_lower]["types"].append(current_role)
+                # Merge types
+                if current_role not in all_people[name_lower]["types"]:
+                    all_people[name_lower]["types"].append(current_role)
     
     return list(all_people.values())
 
 
 def _extract_tags(soup: BeautifulSoup) -> list:
-    """Extract movie tags - clean extraction only"""
-    section = _find_section_from_label(soup, r"^Tags$|Tags")
-    if not section:
-        return []
-    
+    """Extract movie tags"""
     tags = []
     seen = set()
     
-    # Only extract <a> with class="tag"
-    for a in section.find_all("a", class_="tag", href=True):
+    for a in soup.find_all("a", class_="tag", href=True):
         name = _text(a)
         
         if not name:
@@ -1001,34 +982,69 @@ def _extract_tags(soup: BeautifulSoup) -> list:
 # MOVIE & PEOPLE HELPERS
 # ============================================================================
 
-def get_or_create_person(name: str, person_type: str = 'actor') -> Optional[str]:
-    """Get or create person, return UUID"""
+def get_or_create_person(name: str, types: list, sacnilk_url: str = None) -> Optional[str]:
+    """Get or create person in Directus"""
     try:
-        # Check if exists
+        if not name:
+            return None
+        
+        # Check by sacnilk_url first
+        if sacnilk_url:
+            result = directus_get(f"/items/people?filter[sacnilk_url][_eq]={sacnilk_url}&limit=1")
+            existing = result.get('data', [])
+            
+            if existing:
+                person_id = existing[0]['id']
+                existing_types = existing[0].get('type', []) or []
+                
+                updated_types = list(set(existing_types + types))
+                if updated_types != existing_types:
+                    directus_patch(f"/items/people/{person_id}", {'type': updated_types})
+                
+                return person_id
+        
+        # Check by name
         result = directus_get(f"/items/people?filter[name][_eq]={name}&limit=1")
         existing = result.get('data', [])
         
-        if existing and len(existing) > 0:
-            return existing[0]['id']
+        if existing:
+            person_id = existing[0]['id']
+            existing_types = existing[0].get('type', []) or []
+            
+            update_data = {}
+            updated_types = list(set(existing_types + types))
+            
+            if updated_types != existing_types:
+                update_data['type'] = updated_types
+            
+            # Add sacnilk_url if missing
+            if sacnilk_url and not existing[0].get('sacnilk_url'):
+                update_data['sacnilk_url'] = sacnilk_url
+            
+            if update_data:
+                directus_patch(f"/items/people/{person_id}", update_data)
+            
+            return person_id
         
-        # Create new
+        # Create new person
         person_data = {
             'name': name,
             'slug': slugify(name),
-            'type': [person_type],
-            'status': 'published'
+            'type': types,
+            'status': 'published',
+            'sacnilk_url': sacnilk_url  # ← MUST BE HERE
         }
         
         result = directus_post('/items/people', person_data)
         person_id = result.get('data', {}).get('id')
         
         if person_id:
-            logger.info(f"Created person: {name} ({person_id})")
+            logger.info(f"Created person: {name} - {sacnilk_url}")
         
         return person_id
         
     except Exception as e:
-        logger.error(f"Get/create person failed: {e}")
+        logger.error(f"Get/create person error: {e}")
         return None
 
 def check_duplicate_movie(title: str, sacnilk_url: str) -> Optional[Dict]:

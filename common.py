@@ -737,7 +737,7 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
             movies.append({
                 "title": title,
                 "sacnilk_source_url": urljoin("https://sacnilk.com", href),
-                "slug": "slug": f"{slugify(title)}-{str(release_date)[:4]}" if title and release_date and str(release_date)[:4].isdigit() else slugify(title) if title else None,
+                "slug": f"{slugify(title)}-{str(release_date)[:4]}" if title and release_date and str(release_date)[:4].isdigit() else slugify(title) if title else None,
                 "poster_url": poster_url,
                 "image_alt": title,
                 "release_date": release_date,

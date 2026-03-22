@@ -87,13 +87,13 @@ def discover_new_movies():
                 create_data = {
                     'status': 'announced',
                     'title': title,
-                    'slug': slugify(title),
+                    'slug': movie_data.get('slug'),
                     'release_date': movie_data.get('release_date'),
                     'language': movie_data.get('language', []),
                     'genre': movie_data.get('genre', []),
                     'sacnilk_source_url': sacnilk_url,
                     'poster': movie_data.get('poster'),
-                    'budget': movie_data.get('budget'),
+                    'budget': movie_data.get('budget', 0),
                     'plot': movie_data.get('plot', ''),
                     'cast_crew': cast_ids,
                     'tags': [title] + movie_data.get('genre', [])

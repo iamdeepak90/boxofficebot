@@ -711,8 +711,8 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
 
             movies.append({
                 "title": title,
-                "movie_url": urljoin("https://sacnilk.com", href),
-                "slug": href.strip("/").split("/")[-1],
+                "sacnilk_source_url": urljoin("https://sacnilk.com", href),
+                "slug": href.strip("/").split("/")[-1].replace("_", "-").lower(),
                 "poster_url": poster_url,
                 "image_alt": title,
                 "release_date": release_date,

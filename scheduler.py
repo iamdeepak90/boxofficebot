@@ -67,7 +67,7 @@ def discover_new_movies():
                     person_id = get_or_create_person(
                         name=person_data['name'],
                         types=person_data['types'],
-                        sacnilk_url=person_data.get('sacnilk_url')  # ← MUST PASS THIS
+                        sacnilk_url=person_data.get('sacnilk_url')
                     )
                     if person_id:
                         cast_ids.append(person_id)

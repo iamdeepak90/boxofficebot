@@ -620,7 +620,7 @@ def get_page_content(url: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Requests failed: {e}")
         return None
-        
+
 
 def parse_box_office_table(html_content: str) -> Optional[Dict]:
     """Parse Sacnilk box office table"""
@@ -912,54 +912,90 @@ def _extract_ott(soup: BeautifulSoup) -> tuple:
 def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
     """Extract cast and crew from 'Cast & Crew' section"""
     
-    # Find "Cast & Crew" or "Cast and Crew" section
     section = _find_section_from_label(soup, r"Cast\s*&?\s*Crew")
     if not section:
         return []
     
     all_people = {}  # name_lower -> person_data
-    current_role = "Cast"  # Default
+    current_section = None  # "Cast" or "Crew"
     
-    for el in section.find_all(["div", "p", "span", "a", "h3", "h4", "h5", "strong", "b"]):
-        txt = _text(el)
-        if not txt:
+    # Find Cast and Crew subsections
+    subsections = section.find_all("h4", class_="font-semibold")
+    
+    for subsection in subsections:
+        subsection_text = _text(subsection)
+        
+        # Determine section type
+        if not subsection_text:
             continue
         
-        txt_stripped = txt.strip()
-        
-        # Check if this is a role label (short text, no link, looks like header)
-        if el.name != "a" and len(txt_stripped) < 50:
-            # Likely a role: "Director", "Producer", "Cast", etc.
-            current_role = txt_stripped
+        if "Cast" in subsection_text:
+            current_section = "Cast"
+        elif "Crew" in subsection_text:
+            current_section = "Crew"
+        else:
             continue
         
-        # Extract person link (only from <a> tags with /tag/)
-        if el.name == "a":
-            href = el.get("href", "").strip()
+        # Find parent container
+        container = subsection.find_parent("div")
+        if not container:
+            continue
+        
+        # Find all person links
+        person_links = container.find_all("a", href=True)
+        
+        for a in person_links:
+            href = a.get("href", "").strip()
             
-            # Must have /tag/ in href
-            if not href or "/tag/" not in href:
+            if "/tag/" not in href:
                 continue
             
-            name = txt_stripped
-            name_lower = name.lower()
-            sacnilk_url = urljoin("https://sacnilk.com", href)
+            span = a.find("span", class_="truncate")
+            if not span:
+                continue
             
-            # Skip if name looks weird
+            text = _text(span)
+            if not text:
+                continue
+            
+            # Parse based on section
+            if current_section == "Cast":
+                # Simple name: "Nani"
+                name = text.strip()
+                person_type = "Actor"
+                
+            elif current_section == "Crew":
+                # Format: "Director: Srikanth Odela"
+                if ":" in text:
+                    parts = text.split(":", 1)
+                    person_type = parts[0].strip()  # "Director"
+                    name = parts[1].strip()  # "Srikanth Odela"
+                else:
+                    # Fallback if no colon
+                    name = text.strip()
+                    person_type = "Crew"
+            else:
+                continue
+            
+            # Validation
             if len(name) < 2 or len(name) > 100:
                 continue
             
+            name_lower = name.lower()
+            sacnilk_url = urljoin("https://sacnilk.com", href)
+            
+            # Add or merge
             if name_lower not in all_people:
                 all_people[name_lower] = {
                     "name": name,
                     "slug": slugify(name),
-                    "types": [current_role],
+                    "types": [person_type],
                     "sacnilk_url": sacnilk_url
                 }
             else:
                 # Merge types
-                if current_role not in all_people[name_lower]["types"]:
-                    all_people[name_lower]["types"].append(current_role)
+                if person_type not in all_people[name_lower]["types"]:
+                    all_people[name_lower]["types"].append(person_type)
     
     return list(all_people.values())
 

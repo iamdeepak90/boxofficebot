@@ -13,7 +13,7 @@ import re
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from fuzzywuzzy import fuzz
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from urllib.parse import urljoin
 
 # ============================================================================
@@ -236,31 +236,56 @@ def upload_file_to_directus(file_path: str = None, file_url: str = None, title: 
         base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
-        headers = {}
+        headers = {'Content-Type': 'application/json'}
         if token:
             headers['Authorization'] = f"Bearer {token}"
         
+        # Use /files/import for URLs
         if file_url:
-            # Download file first
-            response = requests.get(file_url, timeout=30)
-            response.raise_for_status()
-            file_data = response.content
-            filename = title or file_url.split('/')[-1]
+            import_url = f"{base_url}/files/import"
+            payload = {
+                "url": file_url,
+                "data": {
+                    "title": (title or "image")[:255]
+                }
+            }
+            
+            response = requests.post(import_url, headers=headers, json=payload, timeout=120)
+            
+            if response.status_code >= 400:
+                logger.warning(f"Directus import failed ({response.status_code}): {response.text[:500]}")
+                return None
+            
+            data = response.json()
+            file_id = (data.get('data') or {}).get('id')
+            
+            if file_id:
+                logger.info(f"File imported: {file_url[:80]} -> {file_id}")
+                return str(file_id)
+            
+            logger.warning(f"Directus import returned no ID: {response.text[:300]}")
+            return None
+        
+        # Use /files for local files
         elif file_path:
             with open(file_path, 'rb') as f:
                 file_data = f.read()
+            
             filename = title or os.path.basename(file_path)
-        else:
-            return None
+            files = {'file': (filename, file_data)}
+            
+            # Remove Content-Type for multipart
+            headers.pop('Content-Type', None)
+            
+            response = requests.post(f"{base_url}/files", headers=headers, files=files, timeout=60)
+            response.raise_for_status()
+            
+            result = response.json()
+            file_uuid = result.get('data', {}).get('id')
+            logger.info(f"File uploaded: {file_uuid}")
+            return file_uuid
         
-        files = {'file': (filename, file_data)}
-        response = requests.post(f"{base_url}/files", headers=headers, files=files, timeout=60)
-        response.raise_for_status()
-        
-        result = response.json()
-        file_uuid = result.get('data', {}).get('id')
-        logger.info(f"File uploaded: {file_uuid}")
-        return file_uuid
+        return None
         
     except Exception as e:
         logger.error(f"File upload error: {e}")
@@ -712,7 +737,7 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
             movies.append({
                 "title": title,
                 "sacnilk_source_url": urljoin("https://sacnilk.com", href),
-                "slug": href.strip("/").split("/")[-1].replace("_", "-").lower(),
+                "slug": "slug": f"{slugify(title)}-{str(release_date)[:4]}" if title and release_date and str(release_date)[:4].isdigit() else slugify(title) if title else None,
                 "poster_url": poster_url,
                 "image_alt": title,
                 "release_date": release_date,
@@ -736,14 +761,257 @@ def scrape_movie_details(sacnilk_url: str) -> Optional[Dict]:
         
         soup = BeautifulSoup(html, 'html.parser')
         
-        # TODO: Adjust selectors based on actual HTML
-        details = {}
+        # Extract summary
+        summary = _extract_summary(soup)
         
-        return details
+        # Extract runtime and CBFC
+        runtime, cbfc_rating = _extract_runtime_and_cbfc(soup)
+        
+        # Extract OTT info
+        ott_platform, ott_release_date = _extract_ott(soup)
+        
+        # Extract cast and crew
+        casts = _extract_casts(soup)
+        crew = _extract_crew(soup)
+        
+        # Merge cast + crew
+        merged_casts = []
+        seen = set()
+        for item in casts + crew:
+            key = (item["name"].lower(), item["type"])
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_casts.append(item)
+        
+        # Extract tags
+        tags = _extract_tags(soup)
+        
+        return {
+            "summary": summary,
+            "runtime": runtime,
+            "cbfc_rating": cbfc_rating,
+            "ott_platform": ott_platform,
+            "ott_release_date": ott_release_date,
+            "casts": merged_casts,
+            "tags": tags
+        }
         
     except Exception as e:
         logger.error(f"Movie details scrape failed: {e}")
         return None
+
+
+# Helper functions (add these after scrape_movie_details)
+
+def _text(el: Optional[Tag]) -> Optional[str]:
+    """Extract text from BeautifulSoup tag"""
+    if not el:
+        return None
+    value = el.get_text(" ", strip=True)
+    return value or None
+
+
+def _runtime_to_minutes(runtime_text: str) -> Optional[int]:
+    """Convert '3h 19m' -> 199, '150m' -> 150, '2h' -> 120"""
+    if not runtime_text:
+        return None
+    
+    hours = 0
+    minutes = 0
+    
+    h_match = re.search(r"(\d+)\s*h", runtime_text, re.I)
+    m_match = re.search(r"(\d+)\s*m", runtime_text, re.I)
+    
+    if h_match:
+        hours = int(h_match.group(1))
+    if m_match:
+        minutes = int(m_match.group(1))
+    
+    total = hours * 60 + minutes
+    return total if total > 0 else None
+
+
+def _find_section_from_label(soup: BeautifulSoup, label_pattern: str) -> Optional[Tag]:
+    """Find section by label text"""
+    label_node = soup.find(string=re.compile(label_pattern, re.I))
+    if not label_node:
+        return None
+    
+    current = label_node.parent
+    for _ in range(4):
+        if not current:
+            break
+        if isinstance(current, Tag):
+            links = current.find_all("a", href=True)
+            divs = current.find_all(["div", "p", "span", "img", "h1", "h2", "h3", "h4"])
+            if links or len(divs) >= 2:
+                return current
+        current = current.parent
+    
+    return label_node.parent if isinstance(label_node.parent, Tag) else None
+
+
+def _extract_summary(soup: BeautifulSoup) -> Optional[str]:
+    """Extract movie summary"""
+    section = _find_section_from_label(soup, r"Summary\s*Text")
+    if section:
+        p = section.find("p")
+        if p:
+            return _text(p)
+    
+    label_node = soup.find(string=re.compile(r"Summary\s*Text", re.I))
+    if label_node:
+        for nxt in label_node.parent.find_all_next(["p", "div"], limit=8):
+            txt = _text(nxt)
+            if txt and len(txt) > 40:
+                return txt
+    
+    return None
+
+
+def _extract_runtime_and_cbfc(soup: BeautifulSoup) -> tuple:
+    """Extract runtime and CBFC rating"""
+    runtime = None
+    cbfc_rating = None
+    
+    text_nodes = [t.strip() for t in soup.stripped_strings]
+    
+    for txt in text_nodes:
+        if runtime is None and re.search(r"\b\d+\s*h(?:\s*\d+\s*m)?\b|\b\d+\s*m\b", txt, re.I):
+            mins = _runtime_to_minutes(txt)
+            if mins:
+                runtime = mins
+        
+        if cbfc_rating is None and txt.upper() in {"U", "U/A", "A", "S"}:
+            cbfc_rating = txt.upper()
+        
+        if runtime and cbfc_rating:
+            break
+    
+    return runtime, cbfc_rating
+
+
+def _extract_ott(soup: BeautifulSoup) -> tuple:
+    """Extract OTT platform and release date"""
+    section = _find_section_from_label(soup, r"OTT\s*Release")
+    if not section:
+        return None, None
+    
+    ott_platform = None
+    img = section.find("img")
+    if img:
+        ott_platform = img.get("alt") or img.get("title")
+    
+    section_text = section.get_text(" ", strip=True)
+    date_match = re.search(r"\b\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\b", section_text)
+    ott_release_date = date_match.group(0) if date_match else None
+    
+    return ott_platform, ott_release_date
+
+
+def _extract_people_from_links(section: Tag, default_type: str = "actor") -> list:
+    """Extract people from section links"""
+    items = []
+    seen = set()
+    
+    for a in section.find_all("a", href=True):
+        href = a.get("href", "").strip()
+        name = _text(a)
+        
+        if not name or "/tag/" not in href:
+            continue
+        
+        key = (name.lower(), default_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        
+        items.append({
+            "name": name,
+            "slug": slugify(name),
+            "type": default_type
+        })
+    
+    return items
+
+
+def _extract_casts(soup: BeautifulSoup) -> list:
+    """Extract cast members"""
+    section = _find_section_from_label(soup, r"^Cast$|Cast")
+    if not section:
+        return []
+    return _extract_people_from_links(section, default_type="actor")
+
+
+def _extract_crew(soup: BeautifulSoup) -> list:
+    """Extract crew members"""
+    VALID_ROLES = {
+        "Director", "Producer", "Writer", "Music Director", "Composer",
+        "Cinematographer", "Editor", "Screenplay", "Story", "Dialogue",
+        "Lyrics", "Singer", "Choreographer", "Action Director"
+    }
+    
+    section = _find_section_from_label(soup, r"^Crew$|Crew")
+    if not section:
+        return []
+    
+    crew = []
+    seen = set()
+    current_role = None
+    
+    for el in section.find_all(["div", "p", "span", "a", "h3", "h4"]):
+        txt = _text(el)
+        if not txt:
+            continue
+        
+        if txt in VALID_ROLES:
+            current_role = slugify(txt, separator="_")
+            continue
+        
+        if el.name == "a":
+            href = el.get("href", "").strip()
+            if "/tag/" not in href:
+                continue
+            
+            role_type = current_role or "crew"
+            key = (txt.lower(), role_type)
+            
+            if key in seen:
+                continue
+            seen.add(key)
+            
+            crew.append({
+                "name": txt,
+                "slug": slugify(txt),
+                "type": role_type
+            })
+    
+    return crew
+
+
+def _extract_tags(soup: BeautifulSoup) -> list:
+    """Extract movie tags"""
+    section = _find_section_from_label(soup, r"^Tags$|Tags")
+    if not section:
+        return []
+    
+    tags = []
+    seen = set()
+    
+    for a in section.find_all("a", href=True):
+        href = a.get("href", "").strip()
+        name = _text(a)
+        
+        if not name or "/tag/" not in href:
+            continue
+        
+        if name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        tags.append(name)
+    
+    return tags
 
 # ============================================================================
 # MOVIE & PEOPLE HELPERS

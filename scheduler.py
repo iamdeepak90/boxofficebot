@@ -53,8 +53,6 @@ def discover_new_movies():
                 if duplicate:
                     similarity = fuzzy_match(title, duplicate.get('title', ''))
                     logger.warning(f"Duplicate found: {duplicate.get('title')} ({similarity}%)")
-                    
-                    # Send Slack alert
                     send_duplicate_alert_slack(title, duplicate.get('title'), similarity, sacnilk_url)
                     continue
                 
@@ -63,17 +61,17 @@ def discover_new_movies():
                 if details:
                     movie_data.update(details)
                 
-                # Process cast
+                # Process cast from details (merged casts from scrape_movie_details)
                 cast_ids = []
-                for name in movie_data.get('cast_names', []):
-                    person_id = get_or_create_person(name, 'actor')
+                for person_data in movie_data.get('casts', []):
+                    person_id = get_or_create_person(person_data['name'], person_data['type'])
                     if person_id:
                         cast_ids.append(person_id)
                 
-                # Humanize plot (2 stages: Gen → Humanize)
-                raw_plot = movie_data.get('plot', '')
-                if raw_plot:
-                    humanized_plot = humanize_plot(raw_plot, title)
+                # Humanize summary (2 stages: Gen → Humanize)
+                raw_summary = movie_data.get('summary', '')
+                if raw_summary:
+                    humanized_plot = humanize_plot(raw_summary, title)
                     movie_data['plot'] = humanized_plot
                 
                 # Upload poster
@@ -89,14 +87,18 @@ def discover_new_movies():
                     'title': title,
                     'slug': movie_data.get('slug'),
                     'release_date': movie_data.get('release_date'),
-                    'language': movie_data.get('language', []),
-                    'genre': movie_data.get('genre', []),
+                    'language': movie_data.get('languages', []),
+                    'genre': movie_data.get('genres', ''),
                     'sacnilk_source_url': sacnilk_url,
                     'poster': movie_data.get('poster'),
                     'budget': movie_data.get('budget', 0),
                     'plot': movie_data.get('plot', ''),
+                    'runtime': movie_data.get('runtime'),
+                    'cbfc_rating': movie_data.get('cbfc_rating'),
+                    'ott_platform': movie_data.get('ott_platform'),
+                    'ott_release_date': movie_data.get('ott_release_date'),
                     'cast_crew': cast_ids,
-                    'tags': [title] + movie_data.get('genre', [])
+                    'tags': movie_data.get('tags', []) + movie_data.get('genres', [])
                 }
                 
                 result = directus_post('/items/movies', create_data)
@@ -105,8 +107,6 @@ def discover_new_movies():
                 if movie_id:
                     logger.info(f"✅ Created movie: {title} ({movie_id})")
                     created_count += 1
-                    
-                    # Slack notification
                     send_new_movie_notification(movie_data, movie_id)
                 
                 time.sleep(random.uniform(1, 2))

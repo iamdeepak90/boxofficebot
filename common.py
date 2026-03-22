@@ -760,29 +760,13 @@ def scrape_movie_details(sacnilk_url: str) -> Optional[Dict]:
         
         # Extract summary
         summary = _extract_summary(soup)
-        
         # Extract runtime and CBFC
         runtime, cbfc_rating = _extract_runtime_and_cbfc(soup)
-        
         # Extract OTT info
         ott_platform, ott_release_date = _extract_ott(soup)
-        
-        # Extract cast and crew
-        casts = _extract_casts(soup)
-        crew = _extract_crew(soup)
-        
-        # Merge cast + crew
-        merged_casts = []
-        seen = set()
-        for item in casts + crew:
-            key = (item["name"].lower(), item["type"])
-            if key in seen:
-                continue
-            seen.add(key)
-            merged_casts.append(item)
-        
         # Extract tags
         tags = _extract_tags(soup)
+        cast_and_crew = _extract_cast_and_crew(soup)
         
         return {
             "summary": summary,
@@ -790,7 +774,7 @@ def scrape_movie_details(sacnilk_url: str) -> Optional[Dict]:
             "cbfc_rating": cbfc_rating,
             "ott_platform": ott_platform,
             "ott_release_date": ott_release_date,
-            "casts": merged_casts,
+            "casts": cast_and_crew,
             "tags": tags
         }
         
@@ -907,84 +891,73 @@ def _extract_ott(soup: BeautifulSoup) -> tuple:
     return ott_platform, ott_release_date
 
 
-def _extract_people_from_links(section: Tag, default_type: str = "actor") -> list:
-    """Extract people from section links"""
-    items = []
-    seen = set()
+def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
+    """Extract all cast and crew members"""
     
-    for a in section.find_all("a", href=True):
-        href = a.get("href", "").strip()
-        name = _text(a)
-        
-        if not name or "/tag/" not in href:
-            continue
-        
-        key = (name.lower(), default_type)
-        if key in seen:
-            continue
-        seen.add(key)
-        
-        items.append({
-            "name": name,
-            "slug": slugify(name),
-            "type": default_type
-        })
+    all_people = {}  # name_lower -> person_data
     
-    return items
-
-
-def _extract_casts(soup: BeautifulSoup) -> list:
-    """Extract cast members"""
-    section = _find_section_from_label(soup, r"^Cast$|Cast")
-    if not section:
-        return []
-    return _extract_people_from_links(section, default_type="actor")
-
-
-def _extract_crew(soup: BeautifulSoup) -> list:
-    """Extract crew members"""
-    VALID_ROLES = {
-        "Director", "Producer", "Writer", "Music Director", "Composer",
-        "Cinematographer", "Editor", "Screenplay", "Story", "Dialogue",
-        "Lyrics", "Singer", "Choreographer", "Action Director"
-    }
-    
-    section = _find_section_from_label(soup, r"^Crew$|Crew")
-    if not section:
-        return []
-    
-    crew = []
-    seen = set()
-    current_role = None
-    
-    for el in section.find_all(["div", "p", "span", "a", "h3", "h4"]):
-        txt = _text(el)
-        if not txt:
-            continue
-        
-        if txt in VALID_ROLES:
-            current_role = slugify(txt, separator="_")
-            continue
-        
-        if el.name == "a":
-            href = el.get("href", "").strip()
-            if "/tag/" not in href:
+    # Extract Cast
+    cast_section = _find_section_from_label(soup, r"^Cast$|Cast")
+    if cast_section:
+        for a in cast_section.find_all("a", href=True):
+            href = a.get("href", "").strip()
+            name = _text(a)
+            
+            if not name or "/tag/" not in href:
                 continue
             
-            role_type = current_role or "crew"
-            key = (txt.lower(), role_type)
+            name_lower = name.lower()
+            sacnilk_url = urljoin("https://sacnilk.com", href)
             
-            if key in seen:
-                continue
-            seen.add(key)
-            
-            crew.append({
-                "name": txt,
-                "slug": slugify(txt),
-                "type": role_type
-            })
+            if name_lower not in all_people:
+                all_people[name_lower] = {
+                    "name": name,
+                    "slug": slugify(name),
+                    "types": ["Actor"],
+                    "sacnilk_url": sacnilk_url
+                }
+            else:
+                if "Actor" not in all_people[name_lower]["types"]:
+                    all_people[name_lower]["types"].append("Actor")
     
-    return crew
+    # Extract Crew
+    crew_section = _find_section_from_label(soup, r"^Crew$|Crew")
+    if crew_section:
+        current_role = "Crew"  # Default
+        
+        for el in crew_section.find_all(["div", "p", "span", "a", "h3", "h4"]):
+            txt = _text(el)
+            if not txt:
+                continue
+            
+            # Check if this looks like a role label (short text, not a link)
+            if el.name != "a" and len(txt) < 30:
+                current_role = txt  # Use raw value from HTML
+                continue
+            
+            # Extract person
+            if el.name == "a":
+                href = el.get("href", "").strip()
+                if "/tag/" not in href:
+                    continue
+                
+                name = txt
+                name_lower = name.lower()
+                sacnilk_url = urljoin("https://sacnilk.com", href)
+                
+                if name_lower not in all_people:
+                    all_people[name_lower] = {
+                        "name": name,
+                        "slug": slugify(name),
+                        "types": [current_role],
+                        "sacnilk_url": sacnilk_url
+                    }
+                else:
+                    # Merge types
+                    if current_role not in all_people[name_lower]["types"]:
+                        all_people[name_lower]["types"].append(current_role)
+    
+    return list(all_people.values())
 
 
 def _extract_tags(soup: BeautifulSoup) -> list:

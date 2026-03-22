@@ -63,8 +63,12 @@ def discover_new_movies():
                 
                 # Process cast from details (merged casts from scrape_movie_details)
                 cast_ids = []
-                for person_data in movie_data.get('casts', []):
-                    person_id = get_or_create_person(person_data['name'], person_data['type'])
+                for person_data in movie_data.get('casts', []):  # ← USED HERE
+                    person_id = get_or_create_person(
+                        name=person_data['name'],
+                        types=person_data['types'],
+                        sacnilk_url=person_data.get('sacnilk_url')
+                    )
                     if person_id:
                         cast_ids.append(person_id)
                 
@@ -188,7 +192,7 @@ def update_announced_movies():
     
     try:
         today = datetime.now().date()
-        three_days_ago = (today - timedelta(days=3)).strftime('%Y-%m-%d')
+        three_days_ago = (today - timedelta(days=7)).strftime('%Y-%m-%d')
         
         # Get announced movies + running movies released within 3 days
         result = directus_get(

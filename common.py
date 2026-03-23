@@ -912,20 +912,26 @@ def _extract_ott(soup: BeautifulSoup) -> tuple:
 def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
     """Extract cast and crew from 'Cast & Crew' section"""
     
+    logger.info("=== CAST & CREW EXTRACTION DEBUG ===")
+    
     section = _find_section_from_label(soup, r"Cast\s*&?\s*Crew")
     if not section:
+        logger.warning("Cast & Crew section not found")
         return []
     
-    all_people = {}  # name_lower -> person_data
-    current_section = None  # "Cast" or "Crew"
+    logger.info("Cast & Crew section found")
+    
+    all_people = {}
+    current_section = None
     
     # Find Cast and Crew subsections
     subsections = section.find_all("h4", class_="font-semibold")
+    logger.info(f"Found {len(subsections)} subsections")
     
     for subsection in subsections:
         subsection_text = _text(subsection)
+        logger.info(f"Subsection text: {subsection_text}")
         
-        # Determine section type
         if not subsection_text:
             continue
         
@@ -936,13 +942,15 @@ def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
         else:
             continue
         
-        # Find parent container
+        logger.info(f"Processing section: {current_section}")
+        
         container = subsection.find_parent("div")
         if not container:
+            logger.warning(f"No container found for {current_section}")
             continue
         
-        # Find all person links
         person_links = container.find_all("a", href=True)
+        logger.info(f"Found {len(person_links)} person links in {current_section}")
         
         for a in person_links:
             href = a.get("href", "").strip()
@@ -952,39 +960,39 @@ def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
             
             span = a.find("span", class_="truncate")
             if not span:
+                logger.warning(f"No span.truncate in link: {href}")
                 continue
             
             text = _text(span)
             if not text:
                 continue
             
-            # Parse based on section
+            logger.info(f"Processing: {text} in {current_section}")
+            
             if current_section == "Cast":
-                # Simple name: "Nani"
                 name = text.strip()
                 person_type = "Actor"
                 
             elif current_section == "Crew":
-                # Format: "Director: Srikanth Odela"
                 if ":" in text:
                     parts = text.split(":", 1)
-                    person_type = parts[0].strip()  # "Director"
-                    name = parts[1].strip()  # "Srikanth Odela"
+                    person_type = parts[0].strip()
+                    name = parts[1].strip()
                 else:
-                    # Fallback if no colon
                     name = text.strip()
                     person_type = "Crew"
             else:
                 continue
             
-            # Validation
             if len(name) < 2 or len(name) > 100:
+                logger.warning(f"Invalid name length: {name}")
                 continue
             
             name_lower = name.lower()
             sacnilk_url = urljoin("https://sacnilk.com", href)
             
-            # Add or merge
+            logger.info(f"✅ Adding: {name} ({person_type}) - {sacnilk_url}")
+            
             if name_lower not in all_people:
                 all_people[name_lower] = {
                     "name": name,
@@ -993,10 +1001,10 @@ def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
                     "sacnilk_url": sacnilk_url
                 }
             else:
-                # Merge types
                 if person_type not in all_people[name_lower]["types"]:
                     all_people[name_lower]["types"].append(person_type)
     
+    logger.info(f"=== TOTAL EXTRACTED: {len(all_people)} people ===")
     return list(all_people.values())
 
 

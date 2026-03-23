@@ -910,70 +910,54 @@ def _extract_ott(soup: BeautifulSoup) -> tuple:
 
 
 def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
-    """Extract cast and crew from 'Cast & Crew' section"""
-    
-    logger.info("=== CAST & CREW EXTRACTION DEBUG ===")
+    """Extract cast and crew - simple and working approach"""
     
     section = _find_section_from_label(soup, r"Cast\s*&?\s*Crew")
     if not section:
         logger.warning("Cast & Crew section not found")
         return []
     
-    logger.info("Cast & Crew section found")
-    
     all_people = {}
-    current_section = None
+    current_role = "Actor"  # Default to Actor
     
-    # Find Cast and Crew subsections
-    subsections = section.find_all("h4", class_="font-semibold")
-    logger.info(f"Found {len(subsections)} subsections")
-    
-    for subsection in subsections:
-        subsection_text = _text(subsection)
-        logger.info(f"Subsection text: {subsection_text}")
-        
-        if not subsection_text:
+    # Find all elements in order
+    for el in section.descendants:
+        if not hasattr(el, 'name'):
             continue
         
-        if "Cast" in subsection_text:
-            current_section = "Cast"
-        elif "Crew" in subsection_text:
-            current_section = "Crew"
-        else:
-            continue
+        # Check for role headers (h4 with "Cast" or "Crew")
+        if el.name == "h4":
+            text = _text(el)
+            if text:
+                if "Cast" in text:
+                    current_role = "Actor"
+                    logger.info("Switched to Cast section")
+                elif "Crew" in text:
+                    current_role = "Crew"
+                    logger.info("Switched to Crew section")
         
-        logger.info(f"Processing section: {current_section}")
-        
-        container = subsection.find_parent("div")
-        if not container:
-            logger.warning(f"No container found for {current_section}")
-            continue
-        
-        person_links = container.find_all("a", href=True)
-        logger.info(f"Found {len(person_links)} person links in {current_section}")
-        
-        for a in person_links:
-            href = a.get("href", "").strip()
-            
+        # Extract person links
+        if el.name == "a":
+            href = el.get("href", "")
             if "/tag/" not in href:
                 continue
             
-            span = a.find("span", class_="truncate")
+            # Get text from span.truncate
+            span = el.find("span", class_="truncate")
             if not span:
-                logger.warning(f"No span.truncate in link: {href}")
                 continue
             
             text = _text(span)
             if not text:
                 continue
             
-            logger.info(f"Processing: {text} in {current_section}")
-            
-            if current_section == "Cast":
+            # Parse based on current section
+            if current_role == "Actor":
+                # Cast section: plain name
                 name = text.strip()
                 person_type = "Actor"
-                
-            elif current_section == "Crew":
+            else:
+                # Crew section: "Role: Name" format
                 if ":" in text:
                     parts = text.split(":", 1)
                     person_type = parts[0].strip()
@@ -981,18 +965,17 @@ def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
                 else:
                     name = text.strip()
                     person_type = "Crew"
-            else:
-                continue
             
+            # Validation
             if len(name) < 2 or len(name) > 100:
-                logger.warning(f"Invalid name length: {name}")
                 continue
             
             name_lower = name.lower()
             sacnilk_url = urljoin("https://sacnilk.com", href)
             
-            logger.info(f"✅ Adding: {name} ({person_type}) - {sacnilk_url}")
+            logger.info(f"Found: {name} ({person_type}) - {sacnilk_url}")
             
+            # Add or merge
             if name_lower not in all_people:
                 all_people[name_lower] = {
                     "name": name,
@@ -1004,7 +987,7 @@ def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
                 if person_type not in all_people[name_lower]["types"]:
                     all_people[name_lower]["types"].append(person_type)
     
-    logger.info(f"=== TOTAL EXTRACTED: {len(all_people)} people ===")
+    logger.info(f"Total extracted: {len(all_people)} people")
     return list(all_people.values())
 
 

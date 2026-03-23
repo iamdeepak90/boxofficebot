@@ -130,20 +130,28 @@ def humanize_plot(raw_plot: str, movie_title: str) -> str:
         if not raw_plot:
             return ""
         
-        prompt = f"""Rewrite this movie plot in 2-3 engaging paragraphs.
+        prompt = f"""You are a professional entertainment copywriter.
 
-Movie: {movie_title}
+Task:
+Rewrite the following movie plot into 1-2 engaging paragraphs suitable for a movie listing or recommendation page.
 
-Raw Plot:
+Movie Title: {movie_title}
+
+Source Plot:
 {raw_plot}
 
-Requirements:
-- Engaging and natural
-- Clear, concise language
-- Avoid spoilers
-- 150-200 words
+Instructions:
+- Write in clear, natural, compelling language
+- Keep the tone cinematic and readable, not overly dramatic
+- Preserve the core premise, setting, and main conflict
+- Do not reveal major twists, ending details, or spoilers
+- Avoid copying awkward phrasing from the source
+- Keep it concise: 60-80 words total
+- Make it feel polished and enticing to a general audience
 
-Return only the rewritten plot."""
+Output Rules:
+- Return only the rewritten plot
+- Do not add headings, labels, or extra commentary"""
         
         draft = stage_generation(prompt, 'plot')
         if not draft:

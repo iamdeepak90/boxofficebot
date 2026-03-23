@@ -230,60 +230,55 @@ def directus_delete(endpoint: str) -> bool:
         logger.error(f"Directus DELETE error: {e}")
         return False
 
-def upload_file_to_directus(file_path: str = None, file_url: str = None, title: str = None) -> Optional[str]:
-    """Upload file to Directus and return UUID"""
+def upload_file_to_directus(file_url: str = None, title: str = None) -> Optional[str]:
+    """Upload file to Directus from URL and return UUID"""
     try:
+        if not file_url:
+            return None
+        
         base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
         token = get_setting('directus_token', '')
         
-        headers = {'Content-Type': 'application/json'}
+        import_url = f"{base_url}/files/import"
+        headers = {"Content-Type": "application/json"}
         if token:
-            headers['Authorization'] = f"Bearer {token}"
+            headers["Authorization"] = f"Bearer {token}"
         
-        # Use /files/import for URLs
-        if file_url:
-            import_url = f"{base_url}/files/import"
-            payload = {
-                "url": file_url,
-                "data": {
-                    "title": (title or "image")[:255]
-                }
+        payload = {
+            "url": file_url,
+            "data": {
+                "title": title[:255] if title else "image"
             }
-            
-            response = requests.post(import_url, headers=headers, json=payload, timeout=120)
-            
-            if response.status_code >= 400:
-                logger.warning(f"Directus import failed ({response.status_code}): {response.text[:500]}")
-                return None
-            
-            data = response.json()
-            file_id = (data.get('data') or {}).get('id')
-            
-            if file_id:
-                logger.info(f"File imported: {file_url[:80]} -> {file_id}")
-                return str(file_id)
-            
-            logger.warning(f"Directus import returned no ID: {response.text[:300]}")
-            return None
+        }
         
-        # Use /files for local files
-        elif file_path:
-            with open(file_path, 'rb') as f:
-                file_data = f.read()
-            
-            filename = title or os.path.basename(file_path)
-            files = {'file': (filename, file_data)}
-            
-            # Remove Content-Type for multipart
-            headers.pop('Content-Type', None)
-            
-            response = requests.post(f"{base_url}/files", headers=headers, files=files, timeout=60)
-            response.raise_for_status()
-            
-            result = response.json()
-            file_uuid = result.get('data', {}).get('id')
-            logger.info(f"File uploaded: {file_uuid}")
-            return file_uuid
+        # Retry up to 3 times
+        for attempt in range(1, 4):
+            try:
+                resp = requests.post(import_url, headers=headers, json=payload, timeout=120)
+                
+                if resp.status_code >= 400:
+                    logger.warning(f"Directus import failed (attempt {attempt}/3, status {resp.status_code}): {resp.text[:500]}")
+                    if attempt < 3:
+                        time.sleep(3 * attempt)
+                        continue
+                    return None
+                
+                data = resp.json()
+                file_id = (data.get("data") or {}).get("id")
+                
+                if file_id:
+                    logger.info(f"Image imported: {file_url[:80]} -> {file_id}")
+                    return str(file_id)
+                
+                logger.warning(f"Directus import returned no file ID: {resp.text[:300]}")
+                return None
+                
+            except Exception as e:
+                logger.error(f"Import attempt {attempt}/3 failed: {e}")
+                if attempt < 3:
+                    time.sleep(3 * attempt)
+                    continue
+                return None
         
         return None
         

@@ -100,7 +100,7 @@ def discover_new_movies():
                     'cbfc_rating': movie_data.get('cbfc_rating'),
                     'ott_platform': movie_data.get('ott_platform'),
                     'ott_release_date': movie_data.get('ott_release_date'),
-                    'cast_crew': cast_ids,
+                    'cast_crew': [{'people_id': pid} for pid in cast_ids],
                     'tags': movie_data.get('tags', [])
                 }
                 

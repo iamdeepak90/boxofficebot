@@ -739,7 +739,7 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
                 "release_date": release_date,
                 "release_date_raw": release_date_raw,
                 "languages": card.get("data-languages", "").strip(),
-                "genres": card.get("data-genres", "").strip(),
+                "genre": card.get("data-genres", "").strip(),
             })
 
         return movies
@@ -757,18 +757,29 @@ def scrape_movie_details(sacnilk_url: str) -> Optional[Dict]:
         
         soup = BeautifulSoup(html, 'html.parser')
         
+        title = _extract_movie_title(soup)
         summary = _extract_summary(soup)
-        runtime, cbfc_rating = _extract_runtime_and_cbfc(soup)
-        ott_platform, ott_release_date = _extract_ott(soup)
+        poster = _extract_poster_url(soup)
+        key_details = _extract_key_details(soup)
+        release = _extract_release_information(soup)
+        boxoffice = _extract_boxoffice_budget(soup)
         tags = _extract_tags(soup)
         cast_and_crew = _extract_cast_and_crew(soup)
         
         return {
+            "title": title,
             "summary": summary,
-            "runtime": runtime,
-            "cbfc_rating": cbfc_rating,
-            "ott_platform": ott_platform,
-            "ott_release_date": ott_release_date,
+            "poster": poster,
+            "runtime": key_details["runtime"],
+            "cbfc_rating": key_details["cbfc_rating"],
+            "genre": key_details["genre"],
+            "languages": key_details["languages"],
+            "release_date": release["release_date"],
+            "ott_platform": release["ott_platform"],
+            "ott_release_date": release["ott_release_date"],
+            "india_gross_total": boxoffice["india_gross_total"],
+            "overseas_total": boxoffice["overseas_total"],
+            "budget": boxoffice["budget"],
             "cast_and_crew": cast_and_crew,
             "tags": tags
         }
@@ -785,7 +796,7 @@ def _text(el: Optional[Tag]) -> Optional[str]:
     if not el:
         return None
     value = el.get_text(" ", strip=True)
-    return value or None
+    return value or "N/A"
 
 
 def _runtime_to_minutes(runtime_text: str) -> Optional[int]:
@@ -809,24 +820,49 @@ def _runtime_to_minutes(runtime_text: str) -> Optional[int]:
 
 
 def _find_section_from_label(soup: BeautifulSoup, label_pattern: str) -> Optional[Tag]:
-    """Find section by label text"""
-    label_node = soup.find(string=re.compile(label_pattern, re.I))
+    pattern = re.compile(label_pattern, re.I)
+
+    label_node = soup.find(string=pattern)
+
+    if not label_node:
+        for tag in soup.find_all(True):
+            text = tag.get_text(" ", strip=True)
+            if text and pattern.search(text):
+                label_node = tag
+                break
+
     if not label_node:
         return None
-    
-    current = label_node.parent
-    for _ in range(4):
-        if not current:
-            break
-        if isinstance(current, Tag):
-            links = current.find_all("a", href=True)
-            divs = current.find_all(["div", "p", "span", "img", "h1", "h2", "h3", "h4"])
-            if links or len(divs) >= 2:
-                return current
-        current = current.parent
-    
-    return label_node.parent if isinstance(label_node.parent, Tag) else None
 
+    current = label_node if isinstance(label_node, Tag) else label_node.parent
+    fallback = None
+
+    while current and isinstance(current, Tag):
+        if current.name not in {"span", "b", "i", "strong", "small"}:
+            fallback = current
+
+        direct_children = current.find_all(recursive=False)
+        li_count = len(current.find_all("li"))
+        has_heading = current.find(["h1", "h2", "h3", "h4", "h5", "h6"]) is not None
+
+        if li_count >= 1 or has_heading or len(direct_children) >= 3:
+            return current
+
+        current = current.parent
+
+    return fallback
+
+def _extract_movie_title(soup: BeautifulSoup) -> str:
+    """
+    Extract movie title from the main <h1>.
+    Returns 'N/A' if not found.
+    """
+    h1 = soup.find("h1")
+    if not h1:
+        return "N/A"
+
+    title = h1.get_text(" ", strip=True)
+    return title or "N/A"
 
 def _extract_summary(soup: BeautifulSoup) -> Optional[str]:
     """Extract movie summary"""
@@ -846,62 +882,198 @@ def _extract_summary(soup: BeautifulSoup) -> Optional[str]:
     return None
 
 
-def _extract_runtime_and_cbfc(soup: BeautifulSoup) -> tuple:
-    """Extract runtime and CBFC rating from Key Details section"""
-    runtime = None
-    cbfc_rating = None
-    
-    # Find "Key Details" section
-    key_details = soup.find("h4", string=re.compile(r"Key\s*Details", re.I))
-    if not key_details:
-        return None, None
-    
-    # Get parent container
-    container = key_details.find_parent("div")
-    if not container:
-        return None, None
-    
-    # Find all list items
-    list_items = container.find_all("li")
-    
-    for li in list_items:
-        text = li.get_text(" ", strip=True)
-        
-        # Extract Runtime
-        if "Runtime:" in text:
-            spans = li.find_all("span")
-            if len(spans) >= 2:
-                runtime_text = spans[-1].get_text(strip=True)
-                if runtime_text and runtime_text.upper() != "N/A":
-                    mins = _runtime_to_minutes(runtime_text)
-                    if mins:
-                        runtime = mins
-        
-        # Extract CBFC Rating (as-is, no filter)
-        elif "CBFC Rating:" in text:
-            spans = li.find_all("span")
-            if len(spans) >= 2:
-                cbfc_rating = spans[-1].get_text(strip=True)
-    
-    return runtime, cbfc_rating
+def _extract_poster_url(soup: BeautifulSoup) -> str:
+    for img in soup.find_all("img", src=True):
+        src = img["src"].strip()
+        if "movie" in src.lower():
+            return src
+    return "N/A"
 
 
-def _extract_ott(soup: BeautifulSoup) -> tuple:
-    """Extract OTT platform and release date"""
-    section = _find_section_from_label(soup, r"OTT\s*Release")
+def _normalize_label(text: str) -> str:
+    """Normalize label text for case-insensitive, whitespace-safe matching."""
+    if not text:
+        return ""
+    text = text.strip().lower()
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _extract_key_details(soup: BeautifulSoup) -> Dict:
+    """Extract genre, runtime, CBFC, languages from Key Details section."""
+
+    defaults = {
+        "genre": "N/A",
+        "runtime": 0,
+        "cbfc_rating": "N/A",
+        "languages": "N/A",
+    }
+
+    section = _find_section_from_label(soup, r"Key\s*Details")
     if not section:
-        return None, None
-    
-    ott_platform = None
-    img = section.find("img")
-    if img:
-        ott_platform = img.get("alt") or img.get("title")
-    
-    section_text = section.get_text(" ", strip=True)
-    date_match = re.search(r"\b\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\b", section_text)
-    ott_release_date = date_match.group(0) if date_match else None
-    
-    return ott_platform, ott_release_date
+        return defaults.copy()
+
+    details = defaults.copy()
+
+    # Only direct/relevant list items if possible
+    for li in section.select("li"):
+        spans = li.find_all("span")
+        if len(spans) < 2:
+            continue
+
+        label = _normalize_label(_text(spans[0]))
+        value = _text(spans[-1]).strip()
+
+        if not label or not value:
+            continue
+
+        if "genre" in label:
+            details["genre"] = value
+        elif "runtime" in label:
+            details["runtime"] = _runtime_to_minutes(value)
+        elif "cbfc" in label:
+            details["cbfc_rating"] = value
+        elif "language" in label:
+            details["languages"] = value
+
+    return details
+
+
+def _extract_release_information(soup: BeautifulSoup) -> Dict:
+    """
+    Extract from Release Information section:
+    - release_date (theatrical release)
+    - ott_platform (list of platform names)
+    - ott_release_date
+    """
+
+    details = {
+        "release_date": "N/A",
+        "ott_platform": [],
+        "ott_release_date": "N/A",
+    }
+
+    section = _find_section_from_label(soup, r"Release\s*Information")
+    if not section:
+        return details
+
+    # 1) Theatrical release date
+    for li in section.select("li"):
+        spans = li.find_all("span")
+        if len(spans) < 2:
+            continue
+
+        label = _normalize_label(_text(spans[0]))
+        value = _text(spans[-1])
+
+        if "theatrical release" in label:
+            details["release_date"] = value
+            break
+
+    # 2) Find OTT block
+    ott_li = None
+    for li in section.select("li"):
+        li_text = _normalize_label(_text(li))
+        if "ott release" in li_text:
+            ott_li = li
+            break
+
+    if not ott_li:
+        return details
+
+    # 3) Extract OTT platform(s)
+    platform_names: List[str] = []
+
+    for row in ott_li.select("div.flex.justify-between"):
+        spans = row.find_all("span")
+        if not spans:
+            continue
+
+        label = _normalize_label(_text(spans[0]))
+        if "platform" not in label:
+            continue
+
+        for img in row.find_all("img"):
+            name = (img.get("alt") or img.get("title") or "").strip()
+            if name and name not in platform_names:
+                platform_names.append(name)
+
+        # fallback if platform appears as text instead of image
+        if not platform_names and len(spans) > 1:
+            fallback_text = _text(spans[-1])
+            if fallback_text:
+                platform_names.append(fallback_text)
+
+        break
+
+    details["ott_platform"] = platform_names
+
+    # 4) Extract OTT release date
+    for row in ott_li.select("div.flex.justify-between"):
+        spans = row.find_all("span")
+        if len(spans) < 2:
+            continue
+
+        label = _normalize_label(_text(spans[0]))
+        value = _text(spans[-1])
+
+        if label in {"release date", "release date:"}:
+            details["ott_release_date"] = value
+            break
+
+    return details
+
+
+def _extract_amount(value: str) -> float:
+    """
+    Extract numeric value only from strings like:
+    '₹450.19 Cr' -> 450.19
+    '₹175 Cr' -> 175.0
+    """
+    if not value:
+        return 0.0
+
+    value = value.replace(",", "").strip()
+    match = re.search(r"(\d+(?:\.\d+)?)", value)
+    return float(match.group(1)) if match else 0.0
+
+
+def _extract_boxoffice_budget(soup: BeautifulSoup) -> Dict:
+    """
+    Extract from Quick Stats section:
+    - total_gross
+    - overseas
+    - budget
+
+    Returns numbers only, without ₹ or Cr.
+    """
+
+    details = {
+        "india_gross_total": 0.0,
+        "overseas_total": 0.0,
+        "budget": 0.0,
+    }
+
+    section = _find_section_from_label(soup, r"Quick\s*Stats")
+    if not section:
+        return details
+
+    for row in section.select("div.flex.justify-between"):
+        spans = row.find_all("span")
+        if len(spans) < 2:
+            continue
+
+        label = _normalize_label(_text(spans[0]))
+        value = _text(spans[-1])
+
+        if "total gross" in label:
+            details["india_gross_total"] = _extract_amount(value)
+        elif "overseas" in label:
+            details["overseas_total"] = _extract_amount(value)
+        elif "budget" in label:
+            details["budget"] = _extract_amount(value)
+
+    return details
 
 
 def _extract_cast_and_crew(soup: BeautifulSoup) -> list:

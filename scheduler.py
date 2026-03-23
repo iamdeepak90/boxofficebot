@@ -124,6 +124,124 @@ def discover_new_movies():
         logger.error(f"Discovery failed: {e}")
 
 
+
+def update_announced_movies():
+    """Smart metadata updates based on movie age"""
+    logger.info("=" * 60)
+    logger.info("UPDATE: MOVIE METADATA")
+    logger.info("=" * 60)
+    
+    try:
+        today = datetime.now().date()
+        
+        # Calculate date ranges
+        two_months_ago = (today - timedelta(days=60)).strftime('%Y-%m-%d')
+        four_months_ago = (today - timedelta(days=120)).strftime('%Y-%m-%d')
+        six_months_ago = (today - timedelta(days=180)).strftime('%Y-%m-%d')
+        
+        # Determine what to update based on day of week
+        day_of_week = today.weekday()  # 0=Monday, 6=Sunday
+        
+        movies_to_update = []
+        
+        # DAILY: Announced + Released within 2 months
+        result = directus_get(
+            f"/items/movies?filter[_or][0][status][_eq]=announced&filter[_or][1][_and][0][status][_in]=running,closed&filter[_or][1][_and][1][release_date][_gte]={two_months_ago}&limit=1000"
+        )
+        movies_to_update.extend(result.get('data', []))
+        logger.info(f"Daily updates: {len(movies_to_update)} movies (announced + released <2 months)")
+        
+        # WEEKLY (Sundays): 2-4 months old
+        if day_of_week == 6:  # Sunday
+            result = directus_get(
+                f"/items/movies?filter[status][_in]=running,closed&filter[release_date][_gte]={four_months_ago}&filter[release_date][_lt]={two_months_ago}&limit=1000"
+            )
+            weekly = result.get('data', [])
+            movies_to_update.extend(weekly)
+            logger.info(f"Weekly updates: {len(weekly)} movies (2-4 months old)")
+        
+        # BI-WEEKLY (1st & 15th): 4-6 months old
+        if today.day in [1, 15]:
+            result = directus_get(
+                f"/items/movies?filter[status][_in]=running,closed&filter[release_date][_gte]={six_months_ago}&filter[release_date][_lt]={four_months_ago}&limit=1000"
+            )
+            biweekly = result.get('data', [])
+            movies_to_update.extend(biweekly)
+            logger.info(f"Bi-weekly updates: {len(biweekly)} movies (4-6 months old)")
+        
+        # Update each movie
+        update_count = 0
+        for movie in movies_to_update:
+            try:
+                title = movie.get('title')
+                sacnilk_url = movie.get('sacnilk_source_url')
+                
+                if not sacnilk_url:
+                    continue
+                
+                logger.info(f"Updating: {title}")
+                
+                # Scrape fresh details
+                details = scrape_movie_details(sacnilk_url)
+                if not details:
+                    continue
+                
+                # Merge cast
+                existing_cast = movie.get('cast_crew', [])
+                for person_data in details.get('cast_and_crew', []):
+                    person_id = get_or_create_person(
+                        name=person_data['name'],
+                        types=person_data['types'],
+                        sacnilk_url=person_data.get('sacnilk_url')
+                    )
+                    if person_id and person_id not in existing_cast:
+                        existing_cast.append(person_id)
+
+                # Update Poster only if existing movie does not already have poster
+                existing_poster = movie.get('poster')
+                if not existing_poster:
+                    poster_url = details.get('poster')
+                    if poster_url:
+                        poster_uuid = upload_file_to_directus(file_url=poster_url, title=slugify(title))
+                        if poster_uuid:
+                            details['poster'] = poster_uuid
+
+                # Update movie
+                update_data = {
+                    'title': details.get('title', movie.get('title', '')),
+                    'language': details.get('languages', movie.get('language', '')),
+                    'genre': details.get('genre', movie.get('genre', '')),
+                    'release_date': details.get('release_date', movie.get('release_date')),
+                    'budget': details.get('budget', movie.get('budget')),
+                    'runtime': details.get('runtime', movie.get('runtime')),
+                    'cbfc_rating': details.get('cbfc_rating', movie.get('cbfc_rating')),
+                    'ott_platform': details.get('ott_platform', movie.get('ott_platform')),
+                    'ott_release_date': details.get('ott_release_date', movie.get('ott_release_date')),
+                    'india_gross_total': details.get('india_gross_total', movie.get('india_gross_total')),
+                    'overseas_total': details.get('overseas_total', movie.get('overseas_total')),
+                    'cast_and_crew': details.get('cast_and_crew', movie.get('cast_and_crew', [])),
+                    'tags': details.get('tags', movie.get('tags', [])),
+                    'cast_crew': [{'people_id': pid} for pid in existing_cast],
+                    **({'poster': details['poster']} if details.get('poster') else {})
+                }
+                
+                directus_patch(f"/items/movies/{movie['id']}", update_data)
+                
+                logger.info(f"✅ Updated: {title}")
+                update_count += 1
+                
+                time.sleep(random.uniform(1, 2))
+                
+            except Exception as e:
+                logger.error(f"Error updating {title}: {e}")
+                continue
+        
+        logger.info(f"Metadata update complete: {update_count} movies updated")
+        
+    except Exception as e:
+        logger.error(f"Update movies failed: {e}")
+
+
 def humanize_plot(raw_plot: str, movie_title: str) -> str:
     """Humanize plot (2 stages: Gen → Humanize, NO SEO)"""
     try:
@@ -189,76 +307,6 @@ def send_new_movie_notification(movie_data: Dict, movie_id: str):
         
     except Exception as e:
         logger.error(f"Slack notification failed: {e}")
-
-
-def update_announced_movies():
-    """Update metadata for announced movies until Day 3"""
-    logger.info("=" * 60)
-    logger.info("UPDATE: ANNOUNCED MOVIES")
-    logger.info("=" * 60)
-    
-    try:
-        today = datetime.now().date()
-        three_days_ago = (today - timedelta(days=7)).strftime('%Y-%m-%d')
-        
-        # Get announced movies + running movies released within 3 days
-        result = directus_get(
-            f"/items/movies?filter[_or][0][status][_eq]=announced&filter[_or][1][_and][0][status][_eq]=running&filter[_or][1][_and][1][release_date][_gte]={three_days_ago}&limit=100"
-        )
-        
-        movies = result.get('data', [])
-        
-        if not movies:
-            logger.info("No movies to update")
-            return
-        
-        logger.info(f"Updating {len(movies)} movies")
-        
-        for movie in movies:
-            try:
-                title = movie.get('title')
-                sacnilk_url = movie.get('sacnilk_source_url')
-                
-                logger.info(f"Updating: {title}")
-                
-                # Scrape fresh data
-                details = scrape_movie_details(sacnilk_url)
-                
-                if not details:
-                    continue
-                
-                # Merge cast (additive)
-                existing_cast = movie.get('cast_crew', [])
-                new_cast_names = details.get('cast_names', [])
-                
-                for name in new_cast_names:
-                    person_id = get_or_create_person(name, 'actor')
-                    if person_id and person_id not in existing_cast:
-                        existing_cast.append(person_id)
-                
-                # Update movie
-                update_data = {
-                    'language': details.get('language', movie.get('language', [])),
-                    'genre': details.get('genre', movie.get('genre', [])),
-                    'budget': details.get('budget', movie.get('budget')),
-                    'cast_crew': existing_cast,
-                    'advance_booking_total': details.get('advance_booking', movie.get('advance_booking_total', 0))
-                }
-                
-                directus_patch(f"/items/movies/{movie['id']}", update_data)
-                
-                logger.info(f"✅ Updated: {title}")
-                
-                time.sleep(random.uniform(1, 2))
-                
-            except Exception as e:
-                logger.error(f"Error updating {title}: {e}")
-                continue
-        
-        logger.info("Update complete")
-        
-    except Exception as e:
-        logger.error(f"Update announced movies failed: {e}")
 
 # ============================================================================
 # TRANSITION (00:05 AM)

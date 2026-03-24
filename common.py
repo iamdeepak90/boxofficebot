@@ -1341,19 +1341,19 @@ def stage_generation(prompt: str, pipeline_type: str) -> Optional[str]:
         
         # Select model based on pipeline type
         if pipeline_type == 'news':
-            model = get_setting("news_generation_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("news_generation_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("news_generation_temperature", 0.7)
             max_tokens = get_setting("news_generation_max_tokens", 8000)
         elif pipeline_type == 'plot':
-            model = get_setting("plot_generation_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("plot_generation_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("plot_generation_temperature", 0.7)
             max_tokens = get_setting("plot_generation_max_tokens", 2000)
         elif pipeline_type == 'daily':
-            model = get_setting("daily_generation_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("daily_generation_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("daily_generation_temperature", 0.7)
             max_tokens = get_setting("daily_generation_max_tokens", 4000)
         elif pipeline_type == 'hub':
-            model = get_setting("hub_generation_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("hub_generation_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("hub_generation_temperature", 0.7)
             max_tokens = get_setting("hub_generation_max_tokens", 4000)
         else:
@@ -1382,19 +1382,19 @@ def stage_humanize(draft_content: str, pipeline_type: str) -> Optional[str]:
         logger.info(f"STAGE 2: Humanization ({pipeline_type})")
         
         if pipeline_type == 'news':
-            model = get_setting("news_humanize_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("news_humanize_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("news_humanize_temperature", 0.8)
             max_tokens = get_setting("news_humanize_max_tokens", 8000)
         elif pipeline_type == 'plot':
-            model = get_setting("plot_humanize_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("plot_humanize_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("plot_humanize_temperature", 0.8)
             max_tokens = get_setting("plot_humanize_max_tokens", 2000)
         elif pipeline_type == 'daily':
-            model = get_setting("daily_humanize_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("daily_humanize_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("daily_humanize_temperature", 0.8)
             max_tokens = get_setting("daily_humanize_max_tokens", 4000)
         elif pipeline_type == 'hub':
-            model = get_setting("hub_humanize_model", "anthropic/claude-3.5-sonnet")
+            model = get_setting("hub_humanize_model", "deepseek/deepseek-v3.2")
             temperature = get_setting("hub_humanize_temperature", 0.8)
             max_tokens = get_setting("hub_humanize_max_tokens", 4000)
         else:

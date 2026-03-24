@@ -94,10 +94,10 @@ settings = {
     'budget_max_tokens': 500,
     
     # News Articles (5 stages)
-    'news_generation_model': 'anthropic/claude-3.5-sonnet',
+    'news_generation_model': 'deepseek/deepseek-v3.2',
     'news_generation_temperature': 0.7,
     'news_generation_max_tokens': 8000,
-    'news_humanize_model': 'anthropic/claude-3.5-sonnet',
+    'news_humanize_model': 'deepseek/deepseek-v3.2',
     'news_humanize_temperature': 0.8,
     'news_humanize_max_tokens': 8000,
     'news_seo_model': 'openai/gpt-4-turbo',
@@ -108,18 +108,18 @@ settings = {
     'news_image_height': 768,
     
     # Plot (2 stages)
-    'plot_generation_model': 'anthropic/claude-3.5-sonnet',
+    'plot_generation_model': 'deepseek/deepseek-v3.2',
     'plot_generation_temperature': 0.7,
     'plot_generation_max_tokens': 2000,
-    'plot_humanize_model': 'anthropic/claude-3.5-sonnet',
+    'plot_humanize_model': 'deepseek/deepseek-v3.2',
     'plot_humanize_temperature': 0.8,
     'plot_humanize_max_tokens': 2000,
     
     # Daily Box Office (3 stages)
-    'daily_generation_model': 'anthropic/claude-3.5-sonnet',
+    'daily_generation_model': 'deepseek/deepseek-v3.2',
     'daily_generation_temperature': 0.7,
     'daily_generation_max_tokens': 4000,
-    'daily_humanize_model': 'anthropic/claude-3.5-sonnet',
+    'daily_humanize_model': 'deepseek/deepseek-v3.2',
     'daily_humanize_temperature': 0.8,
     'daily_humanize_max_tokens': 4000,
     'daily_seo_model': 'openai/gpt-4-turbo',
@@ -127,10 +127,10 @@ settings = {
     'daily_seo_max_tokens': 2000,
     
     # Hub (3 stages)
-    'hub_generation_model': 'anthropic/claude-3.5-sonnet',
+    'hub_generation_model': 'deepseek/deepseek-v3.2',
     'hub_generation_temperature': 0.7,
     'hub_generation_max_tokens': 4000,
-    'hub_humanize_model': 'anthropic/claude-3.5-sonnet',
+    'hub_humanize_model': 'deepseek/deepseek-v3.2',
     'hub_humanize_temperature': 0.8,
     'hub_humanize_max_tokens': 4000,
     'hub_seo_model': 'openai/gpt-4-turbo',

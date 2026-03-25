@@ -78,11 +78,10 @@ def discover_new_movies():
                     movie_data['plot'] = humanized_plot
                 
                 # Upload poster
+                poster_uuid = None
                 poster_url = movie_data.get('poster_url')
                 if poster_url:
                     poster_uuid = upload_file_to_directus(file_url=poster_url, title=slugify(title))
-                    if poster_uuid:
-                        movie_data['poster'] = poster_uuid
                 
                 # Create movie
                 create_data = {
@@ -93,7 +92,7 @@ def discover_new_movies():
                     'language': movie_data.get('languages', ''),
                     'genre': movie_data.get('genres', ''),
                     'sacnilk_source_url': sacnilk_url,
-                    'poster': movie_data.get('poster'),
+                    'poster': poster_uuid,
                     'budget': movie_data.get('budget', 0),
                     'plot': movie_data.get('plot', ''),
                     'runtime': movie_data.get('runtime'),

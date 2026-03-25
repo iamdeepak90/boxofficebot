@@ -151,7 +151,7 @@ def request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) ->
 
             # 5xx = server error, worth retrying
             logger.warning(f"Request failed (attempt {attempt}/{max_retries}): "
-                           f"HTTP {response.status_code} for url: {url}")
+               f"HTTP {response.status_code} for url: {url} | {response.text[:500]}")
 
         except requests.exceptions.RequestException as e:
             logger.warning(f"Request failed (attempt {attempt}/{max_retries}): {e}")

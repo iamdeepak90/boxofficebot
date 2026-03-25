@@ -137,30 +137,20 @@ def get_failed_jobs() -> List[Dict]:
 # ============================================================================
 
 def request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -> Optional[requests.Response]:
-    """HTTP request with exponential backoff retry — retries on 5xx/network errors only"""
-    for attempt in range(1, max_retries + 1):
+    """HTTP request with exponential backoff retry"""
+    for attempt in range(max_retries):
         try:
             response = requests.request(method, url, timeout=30, **kwargs)
-
-            if response.status_code < 500:
-                # 2xx/3xx = success, 4xx = bad request (no point retrying, return for caller to handle)
-                if response.status_code >= 400:
-                    logger.warning(f"Request failed (attempt {attempt}/{max_retries}): "
-                                   f"HTTP {response.status_code} for url: {url} | {response.text[:500]}")
-                return response
-
-            # 5xx = server error, worth retrying
-            logger.warning(f"Request failed (attempt {attempt}/{max_retries}): "
-                           f"HTTP {response.status_code} for url: {url}")
-
+            response.raise_for_status()
+            return response
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Request failed (attempt {attempt}/{max_retries}): {e}")
-
-        if attempt < max_retries:
-            time.sleep(2 ** attempt)
-
-    logger.error(f"Max retries reached for {url}")
-    return None
+            wait_time = 2 ** attempt
+            logger.warning(f"Request failed (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Max retries reached for {url}")
+                return None
 
 # ============================================================================
 # DIRECTUS API
@@ -933,18 +923,39 @@ def _extract_key_details(soup: BeautifulSoup) -> Dict:
     return details
 
 
-def _extract_release_information(soup: BeautifulSoup) -> Dict:
-    """
-    Extract from Release Information section:
-    - release_date (theatrical release)
-    - ott_platform (list of platform names)
-    - ott_release_date
-    """
+from datetime import datetime
+from typing import Optional
 
+def _parse_date(value: str) -> Optional[str]:
+    """Convert any scraped date string to Directus-compatible YYYY-MM-DD"""
+    if not value or value.strip().lower() in ("n/a", "not available", "-", ""):
+        return None
+
+    formats = [
+        "%d %b %Y",     # 26 Mar 2026  ← your current format
+        "%d %B %Y",     # 26 March 2026
+        "%B %d, %Y",    # March 26, 2026
+        "%b %d, %Y",    # Mar 26, 2026
+        "%d-%m-%Y",     # 26-03-2026
+        "%d/%m/%Y",     # 26/03/2026
+        "%Y-%m-%d",     # 2026-03-26 (already correct)
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(value.strip(), fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    logger.warning(f"Could not parse date: '{value}'")
+    return None
+
+
+def _extract_release_information(soup: BeautifulSoup) -> Dict:
     details = {
-        "release_date": "N/A",
+        "release_date": None,       # ← None instead of "N/A"
         "ott_platform": [],
-        "ott_release_date": "N/A",
+        "ott_release_date": None,   # ← None instead of "N/A"
     }
 
     section = _find_section_from_label(soup, r"Release\s*Information")
@@ -956,12 +967,10 @@ def _extract_release_information(soup: BeautifulSoup) -> Dict:
         spans = li.find_all("span")
         if len(spans) < 2:
             continue
-
         label = _normalize_label(_text(spans[0]))
         value = _text(spans[-1])
-
         if "theatrical release" in label:
-            details["release_date"] = value
+            details["release_date"] = _parse_date(value)  # ← convert here
             break
 
     # 2) Find OTT block
@@ -1007,15 +1016,14 @@ def _extract_release_information(soup: BeautifulSoup) -> Dict:
         spans = row.find_all("span")
         if len(spans) < 2:
             continue
-
         label = _normalize_label(_text(spans[0]))
         value = _text(spans[-1])
-
         if label in {"release date", "release date:"}:
-            details["ott_release_date"] = value
+            details["ott_release_date"] = _parse_date(value)  # ← convert here
             break
 
     return details
+
 
 
 def _extract_amount(value: str) -> float:

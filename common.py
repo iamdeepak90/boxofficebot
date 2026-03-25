@@ -137,20 +137,30 @@ def get_failed_jobs() -> List[Dict]:
 # ============================================================================
 
 def request_with_retry(method: str, url: str, max_retries: int = 3, **kwargs) -> Optional[requests.Response]:
-    """HTTP request with exponential backoff retry"""
-    for attempt in range(max_retries):
+    """HTTP request with exponential backoff retry — retries on 5xx/network errors only"""
+    for attempt in range(1, max_retries + 1):
         try:
             response = requests.request(method, url, timeout=30, **kwargs)
-            response.raise_for_status()
-            return response
+
+            if response.status_code < 500:
+                # 2xx/3xx = success, 4xx = bad request (no point retrying, return for caller to handle)
+                if response.status_code >= 400:
+                    logger.warning(f"Request failed (attempt {attempt}/{max_retries}): "
+                                   f"HTTP {response.status_code} for url: {url} | {response.text[:500]}")
+                return response
+
+            # 5xx = server error, worth retrying
+            logger.warning(f"Request failed (attempt {attempt}/{max_retries}): "
+                           f"HTTP {response.status_code} for url: {url}")
+
         except requests.exceptions.RequestException as e:
-            wait_time = 2 ** attempt
-            logger.warning(f"Request failed (attempt {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(wait_time)
-            else:
-                logger.error(f"Max retries reached for {url}")
-                return None
+            logger.warning(f"Request failed (attempt {attempt}/{max_retries}): {e}")
+
+        if attempt < max_retries:
+            time.sleep(2 ** attempt)
+
+    logger.error(f"Max retries reached for {url}")
+    return None
 
 # ============================================================================
 # DIRECTUS API
@@ -187,20 +197,11 @@ def directus_post(endpoint: str, data: Dict) -> Dict:
             headers['Authorization'] = f"Bearer {token}"
         
         response = request_with_retry('POST', url, headers=headers, json=data)
-        if response is None:
-            logger.error(f"Directus POST {endpoint} | No response after all retries")
-            return {'data': None}
-
-        if response.status_code >= 400:
-            logger.error(f"Directus POST {endpoint} | HTTP {response.status_code} | {response.text[:1000]}")
-            return {'data': None}
-
-        result = response.json()
-        logger.debug(f"Directus POST {endpoint} | Success: {str(result)[:200]}")
-        return result
-
+        if response:
+            return response.json()
+        return {'data': None}
     except Exception as e:
-        logger.error(f"Directus POST {endpoint} | Exception: {e}")
+        logger.error(f"Directus POST error: {e}")
         return {'data': None}
 
 def directus_patch(endpoint: str, data: Dict) -> Dict:

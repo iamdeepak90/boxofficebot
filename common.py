@@ -187,11 +187,20 @@ def directus_post(endpoint: str, data: Dict) -> Dict:
             headers['Authorization'] = f"Bearer {token}"
         
         response = request_with_retry('POST', url, headers=headers, json=data)
-        if response:
-            return response.json()
-        return {'data': None}
+        if response is None:
+            logger.error(f"Directus POST {endpoint} | No response after all retries")
+            return {'data': None}
+
+        if response.status_code >= 400:
+            logger.error(f"Directus POST {endpoint} | HTTP {response.status_code} | {response.text[:1000]}")
+            return {'data': None}
+
+        result = response.json()
+        logger.debug(f"Directus POST {endpoint} | Success: {str(result)[:200]}")
+        return result
+
     except Exception as e:
-        logger.error(f"Directus POST error: {e}")
+        logger.error(f"Directus POST {endpoint} | Exception: {e}")
         return {'data': None}
 
 def directus_patch(endpoint: str, data: Dict) -> Dict:

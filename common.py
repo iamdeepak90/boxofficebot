@@ -231,60 +231,44 @@ def directus_delete(endpoint: str) -> bool:
         return False
 
 def upload_file_to_directus(file_url: str = None, title: str = None) -> Optional[str]:
-    """Upload file to Directus from URL and return UUID"""
-    try:
-        if not file_url:
+    """Upload file to Directus — downloads image first to bypass CDN hotlink protection."""
+    if not file_url:
+        return None
+
+    base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
+    token = get_setting('directus_token', '')
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    for attempt in range(1, 4):
+        try:
+            # Download image locally first (avoids Directus /files/import hitting CDN blocks)
+            img_response = requests.get(file_url, timeout=30, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            img_response.raise_for_status()
+
+            # Upload as multipart to /files
+            files = {"file": (f"{title or 'image'}.jpg", img_response.content, img_response.headers.get("Content-Type", "image/jpeg"))}
+            resp = requests.post(f"{base_url}/files", headers=headers, files=files, data={"title": (title or "image")[:255]}, timeout=60)
+
+            if resp.status_code >= 400:
+                logger.warning(f"Directus upload failed (attempt {attempt}/3, status {resp.status_code}): {resp.text[:500]}")
+                time.sleep(3 * attempt)
+                continue
+
+            file_id = resp.json().get("data", {}).get("id")
+            if file_id:
+                logger.info(f"Image uploaded: {file_url[:80]} -> {file_id}")
+                return str(file_id)
+
+            logger.warning(f"Upload returned no file ID: {resp.text[:300]}")
             return None
-        
-        base_url = get_setting('directus_url', 'https://admin.boxofficetalk.com')
-        token = get_setting('directus_token', '')
-        
-        import_url = f"{base_url}/files/import"
-        headers = {"Content-Type": "application/json"}
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        
-        payload = {
-            "url": file_url,
-            "data": {
-                "title": title[:255] if title else "image"
-            }
-        }
-        
-        # Retry up to 3 times
-        for attempt in range(1, 4):
-            try:
-                resp = requests.post(import_url, headers=headers, json=payload, timeout=120)
-                
-                if resp.status_code >= 400:
-                    logger.warning(f"Directus import failed (attempt {attempt}/3, status {resp.status_code}): {resp.text[:500]}")
-                    if attempt < 3:
-                        time.sleep(3 * attempt)
-                        continue
-                    return None
-                
-                data = resp.json()
-                file_id = (data.get("data") or {}).get("id")
-                
-                if file_id:
-                    logger.info(f"Image imported: {file_url[:80]} -> {file_id}")
-                    return str(file_id)
-                
-                logger.warning(f"Directus import returned no file ID: {resp.text[:300]}")
-                return None
-                
-            except Exception as e:
-                logger.error(f"Import attempt {attempt}/3 failed: {e}")
-                if attempt < 3:
-                    time.sleep(3 * attempt)
-                    continue
-                return None
-        
-        return None
-        
-    except Exception as e:
-        logger.error(f"File upload error: {e}")
-        return None
+
+        except Exception as e:
+            logger.error(f"Upload attempt {attempt}/3 failed: {e}")
+            time.sleep(3 * attempt)
+
+    return None
 
 # ============================================================================
 # OPENROUTER API

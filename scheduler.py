@@ -312,25 +312,23 @@ def send_new_movie_notification(movie_data: Dict, movie_id: str):
 # ============================================================================
 
 def transition_movies_to_running():
-    """Transition announced → running, create hub + all day pages"""
+    """Transition announced → running on RELEASE DAY (hub only, no day pages)"""
     logger.info("=" * 60)
     logger.info("TRANSITION: ANNOUNCED → RUNNING")
     logger.info("=" * 60)
     
     try:
-        today = datetime.now().date()
-        tomorrow = (today + timedelta(days=1)).strftime('%Y-%m-%d')
-        today_str = today.strftime('%Y-%m-%d')
+        today = datetime.now().date().strftime('%Y-%m-%d')
         
-        # Get movies releasing today or tomorrow
+        # Get movies releasing TODAY ONLY
         result = directus_get(
-            f"/items/movies?filter[status][_eq]=announced&filter[_or][0][release_date][_eq]={today_str}&filter[_or][1][release_date][_eq]={tomorrow}&limit=100"
+            f"/items/movies?filter[status][_eq]=announced&filter[release_date][_eq]={today}&limit=100"
         )
         
         movies = result.get('data', [])
         
         if not movies:
-            logger.info("No movies to transition")
+            logger.info("No movies to transition today")
             return
         
         logger.info(f"Transitioning {len(movies)} movies")
@@ -339,7 +337,6 @@ def transition_movies_to_running():
             try:
                 movie_id = movie['id']
                 title = movie.get('title')
-                release_date = movie.get('release_date')
                 
                 logger.info(f"Transitioning: {title}")
                 
@@ -361,62 +358,24 @@ def transition_movies_to_running():
                 
                 directus_post('/items/box_office_hubs', hub_payload)
                 
-                # Create all day pages up to today
-                current_day = calculate_day_number(release_date, today_str)
-                
-                for day in range(1, current_day + 1):
-                    day_date = (datetime.strptime(release_date, '%Y-%m-%d') + timedelta(days=day - 1)).strftime('%Y-%m-%d')
-                    
-                    # Check if exists
-                    existing = directus_get(
-                        f"/items/daily_stats?filter[movie_id][_eq]={movie_id}&filter[day_number][_eq]={day}&limit=1"
-                    )
-                    
-                    if existing.get('data'):
-                        continue
-                    
-                    # Create page
-                    stats_payload = {
-                        'movie_id': movie_id,
-                        'day_number': day,
-                        'date': day_date,
-                        'india_net': 0,
-                        'is_estimate': True,
-                        'seo_content': '',
-                        'slug': slugify(f"{title}-day-{day}-box-office-collection"),
-                        'tags': [title, f"day {day}", "box office"]
-                    }
-                    
-                    result = directus_post('/items/daily_stats', stats_payload)
-                    
-                    if result.get('data'):
-                        # Queue AI job
-                        enqueue_job('queue:content_generation', {
-                            'type': 'daily_box_office_prediction',
-                            'movie_id': movie_id,
-                            'day_number': day,
-                            'movie_title': title,
-                            'mode': 'prediction'
-                        })
-                
-                logger.info(f"✅ Transitioned: {title} (created {current_day} day pages)")
+                logger.info(f"✅ Transitioned: {title} (hub created, day pages will be created by create_daily_pages())")
                 
                 # Slack notification
                 blocks = [
                     {
                         "type": "header",
-                        "text": {"type": "plain_text", "text": "🚀 MOVIE LIVE"}
+                        "text": {"type": "plain_text", "text": "🚀 MOVIE RELEASED"}
                     },
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"*{title}*\nStatus: Running\nHub + {current_day} day pages created"
+                            "text": f"*{title}*\nStatus: Running\nHub page created"
                         }
                     }
                 ]
                 
-                slack_post_message(blocks, f"Movie live: {title}")
+                slack_post_message(blocks, f"Movie released: {title}")
                 
                 time.sleep(random.uniform(2, 3))
                 
@@ -535,6 +494,11 @@ def create_daily_pages():
                 day_number = calculate_day_number(release_date, today_str)
                 
                 logger.info(f"{title}: Day {day_number}")
+                
+                # Skip if Day 0 or negative (shouldn't happen)
+                if day_number <= 0:
+                    logger.warning(f"Skipping {title}: Day {day_number}")
+                    continue
                 
                 # Check if page exists
                 existing = directus_get(
@@ -720,9 +684,14 @@ def scrape_all_running_movies():
                 # Update daily stats
                 today = datetime.now().date().strftime('%Y-%m-%d')
                 
+                f# In scrape_all_running_movies() around line ~600
+
                 for day_data in parsed['days']:
                     day_number = day_data['day_number']
                     india_net = day_data['india_net']
+                    
+                    # Skip Day 0 unless it's actually in scraped data
+                    # (This will only create Day 0 if Sacnilk shows it)
                     
                     # Check if exists
                     result = directus_get(
@@ -732,10 +701,10 @@ def scrape_all_running_movies():
                     existing = result.get('data', [])
                     
                     if existing:
+                        # Update existing
                         stats = existing[0]
                         day_date = stats.get('date')
                         
-                        # Update only today
                         if day_date == today:
                             directus_patch(f"/items/daily_stats/{stats['id']}", {
                                 'india_net': india_net,
@@ -743,8 +712,11 @@ def scrape_all_running_movies():
                             })
                             logger.info(f"Updated Day {day_number}: ₹{india_net} Cr")
                     else:
-                        # Backfill missing day
-                        day_date = (datetime.strptime(release_date, '%Y-%m-%d') + timedelta(days=day_number - 1)).strftime('%Y-%m-%d')
+                        # Backfill (including Day 0 if present)
+                        if day_number == 0:
+                            day_date = (datetime.strptime(release_date, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
+                        else:
+                            day_date = (datetime.strptime(release_date, '%Y-%m-%d') + timedelta(days=day_number - 1)).strftime('%Y-%m-%d')
                         
                         stats_payload = {
                             'movie_id': movie_id,

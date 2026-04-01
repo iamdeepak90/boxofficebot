@@ -247,28 +247,16 @@ def humanize_plot(raw_plot: str, movie_title: str) -> str:
         if not raw_plot:
             return ""
         
-        prompt = f"""You are a professional entertainment copywriter.
+        prompt = f"""You are a film critic writing plot summaries for a premium movie database.
 
-Task:
-Rewrite the following movie plot into 1-2 engaging paragraphs suitable for a movie listing or recommendation page.
+        MOVIE: {movie_title}
 
-Movie Title: {movie_title}
+        PLOT:
+        {raw_plot}
 
-Source Plot:
-{raw_plot}
+        Rewrite into exactly 60-80 words total. Hook the reader, build tension, never reveal the ending. Present tense. Vivid and specific — no clichés, no spoilers, no AI phrases like "delve into" or "testament to".
 
-Instructions:
-- Write in clear, natural, compelling language
-- Keep the tone cinematic and readable, not overly dramatic
-- Preserve the core premise, setting, and main conflict
-- Do not reveal major twists, ending details, or spoilers
-- Avoid copying awkward phrasing from the source
-- Keep it concise: 60-80 words total
-- Make it feel polished and enticing to a general audience
-
-Output Rules:
-- Return only the rewritten plot
-- Do not add headings, labels, or extra commentary"""
+        Return only the rewritten plot."""
         
         draft = stage_generation(prompt, 'plot')
         if not draft:
@@ -410,25 +398,26 @@ def generate_hub_content(movie: Dict) -> Dict:
         cast_text = ', '.join(cast_names) if cast_names else "Star cast"
         
         # Stage 1: Generation
-        prompt = f"""Generate a comprehensive box office hub page for this movie.
+        prompt = f"""You are a senior entertainment journalist writing for film trade publication.
 
-MOVIE DETAILS:
-- Title: {title}
-- Release Date: {release_date}
-- Languages: {languages}
-- Genres: {genres}
-- Cast: {cast_text}
-- Budget: ₹{budget} Cr
-- Plot: {plot}
+        MOVIE: {title} | Released: {release_date} | Languages: {languages} | Genre: {genres}
+        BUDGET: ₹{budget} Cr
+        CAST: {cast_text}
+        PLOT: {plot}
 
-Generate 800-1000 word hub page with:
-1. Introduction
-2. Cast and crew highlights
-3. Pre-release buzz
-4. Expected performance
-5. Day-wise tracking info
+        Write an 800-1000 word box office hub page for '{title}' in HTML. This page is the central tracking page for the film's entire theatrical run.
 
-Return only the text (not HTML yet)."""
+        PURPOSE: SEO landing page for readers searching "{title} box office collection". Write editorially — no raw data tables, those are displayed separately on the page.
+
+        STRUCTURE:
+        <h2>About {title}</h2> — 2-3 para editorial intro: what the film is, who made it, why it matters. Weave in genre, languages, and cast naturally.
+        <h2>{title} Box Office Performance</h2> — General narrative about the film's theatrical journey and what to watch for. No specific figures unless provided.
+        <h2>Cast & Crew</h2> — Key cast and crew written as engaging prose, not a list. Highlight notable names and their significance.
+        <h2>Budget & Recovery</h2> — Budget context: what the film needs to break even, what would make it a hit by trade standards.
+        <h2>Frequently Asked Questions</h2> — 5 FAQs as <strong>Q: question</strong> followed by <p>answer</p>. Cover: release date, languages, budget, cast, box office verdict.
+
+        AVOID: Raw day-wise data. "It's worth noting", "Delve into", "Remarkable", "Testament to", "Needless to say", "highly anticipated".
+        HTML only — no <html>/<body> wrappers, no inline styles, no markdown fences."""
         
         draft = stage_generation(prompt, 'hub')
         if not draft:
@@ -458,6 +447,240 @@ Return only the text (not HTML yet)."""
             "meta_title": f"{movie.get('title')} Box Office",
             "meta_description": ""
         }
+
+
+def discover_recent_movies():
+    """Scrape recent movies (last 7 days) and auto-create missing data"""
+    logger.info("=" * 60)
+    logger.info("DISCOVERY: RECENT MOVIES (LAST 7 DAYS)")
+    logger.info("=" * 60)
+    
+    try:
+        # Calculate 7 days ago
+        today = datetime.now().date()
+        seven_days_ago = (today - timedelta(days=7)).strftime('%Y-%m-%d')
+        
+        # Scrape recent movies page
+        movies = scrape_sacnilk_recent_movies()
+        
+        if not movies:
+            logger.info("No recent movies found")
+            return
+        
+        logger.info(f"Found {len(movies)} recent movies on page")
+        
+        created_count = 0
+        transitioned_count = 0
+        
+        for movie_data in movies:
+            try:
+                title = movie_data.get('title')
+                sacnilk_url = movie_data.get('sacnilk_source_url')
+                release_date = movie_data.get('release_date')
+                
+                if not title or not sacnilk_url or not release_date:
+                    continue
+                
+                # Skip if older than 7 days
+                if release_date < seven_days_ago:
+                    continue
+                
+                logger.info(f"Processing: {title} (Released: {release_date})")
+                
+                # Check if movie exists
+                result = directus_get(
+                    f"/items/movies?filter[sacnilk_source_url][_eq]={sacnilk_url}&limit=1"
+                )
+                
+                existing = result.get('data', [])
+                
+                if existing:
+                    # Movie exists - check status
+                    movie = existing[0]
+                    movie_id = movie['id']
+                    current_status = movie.get('status')
+                    
+                    logger.info(f"Movie exists: {title} (status: {current_status})")
+                    
+                    # If still announced, transition to running
+                    if current_status == 'announced':
+                        logger.info(f"Transitioning {title} to running")
+                        
+                        # Update status
+                        directus_patch(f"/items/movies/{movie_id}", {'status': 'running'})
+                        
+                        # Check if hub exists
+                        hub_result = directus_get(
+                            f"/items/box_office_hubs?filter[movie_id][_eq]={movie_id}&limit=1"
+                        )
+                        
+                        if not hub_result.get('data'):
+                            # Create hub
+                            hub_data = generate_hub_content(movie)
+                            hub_payload = {
+                                'movie_id': movie_id,
+                                'main_content': hub_data.get('main_content', ''),
+                                'meta_title': hub_data.get('meta_title', f"{title} Box Office Collection"),
+                                'meta_description': hub_data.get('meta_description', ''),
+                                'slug': slugify(f"{title}-box-office-collection"),
+                                'tags': [title, 'box office collection']
+                            }
+                            directus_post('/items/box_office_hubs', hub_payload)
+                            logger.info(f"✅ Hub created for {title}")
+                        
+                        # Create missing day pages
+                        create_missing_day_pages(movie_id, title, release_date)
+                        
+                        transitioned_count += 1
+                    
+                    elif current_status == 'running':
+                        # Just ensure all day pages exist
+                        create_missing_day_pages(movie_id, title, release_date)
+                    
+                else:
+                    # Movie doesn't exist - create it as running
+                    logger.info(f"Creating new movie: {title}")
+                    
+                    # Scrape full details
+                    details = scrape_movie_details(sacnilk_url)
+                    if details:
+                        movie_data.update(details)
+                    
+                    # Process cast
+                    cast_ids = []
+                    for person_data in movie_data.get('cast_and_crew', []):
+                        person_id = get_or_create_person(
+                            name=person_data['name'],
+                            types=person_data['types'],
+                            sacnilk_url=person_data.get('sacnilk_url')
+                        )
+                        if person_id:
+                            cast_ids.append(person_id)
+                    
+                    # Humanize plot
+                    raw_summary = movie_data.get('summary', '')
+                    if raw_summary:
+                        humanized_plot = humanize_plot(raw_summary, title)
+                        movie_data['plot'] = humanized_plot
+                    
+                    # Upload poster (don't fail if fails)
+                    poster_uuid = None
+                    poster_url = movie_data.get('poster_url')
+                    if poster_url:
+                        try:
+                            poster_uuid = upload_file_to_directus(file_url=poster_url, title=slugify(title))
+                            if poster_uuid:
+                                logger.info(f"✅ Poster uploaded: {poster_uuid}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Poster upload failed: {e}")
+                    
+                    # Create movie as RUNNING
+                    create_data = {
+                        'status': 'running',
+                        'title': title,
+                        'slug': movie_data.get('slug'),
+                        'release_date': release_date,
+                        'language': movie_data.get('languages', ''),
+                        'genre': movie_data.get('genres', ''),
+                        'sacnilk_source_url': sacnilk_url,
+                        'poster': poster_uuid,
+                        'budget': movie_data.get('budget', 0),
+                        'plot': movie_data.get('plot', ''),
+                        'runtime': movie_data.get('runtime'),
+                        'cbfc_rating': movie_data.get('cbfc_rating'),
+                        'ott_platform': movie_data.get('ott_platform'),
+                        'ott_release_date': movie_data.get('ott_release_date'),
+                        'cast_crew': [{'people_id': pid} for pid in cast_ids],
+                        'tags': movie_data.get('tags', [])
+                    }
+                    
+                    result = directus_post('/items/movies', create_data)
+                    movie_id = result.get('data', {}).get('id')
+                    
+                    if movie_id:
+                        logger.info(f"✅ Created movie: {title} ({movie_id})")
+                        
+                        # Create hub
+                        hub_data = generate_hub_content(movie_data)
+                        hub_payload = {
+                            'movie_id': movie_id,
+                            'main_content': hub_data.get('main_content', ''),
+                            'meta_title': hub_data.get('meta_title', f"{title} Box Office Collection"),
+                            'meta_description': hub_data.get('meta_description', ''),
+                            'slug': slugify(f"{title}-box-office-collection"),
+                            'tags': [title, 'box office collection']
+                        }
+                        directus_post('/items/box_office_hubs', hub_payload)
+                        
+                        # Create all day pages
+                        create_missing_day_pages(movie_id, title, release_date)
+                        
+                        # Slack notification
+                        send_new_movie_notification(movie_data, movie_id)
+                        
+                        created_count += 1
+                
+                time.sleep(random.uniform(1, 2))
+                
+            except Exception as e:
+                logger.error(f"Error processing {title}: {e}")
+                continue
+        
+        logger.info(f"Recent movies complete: {created_count} created, {transitioned_count} transitioned")
+        
+    except Exception as e:
+        logger.error(f"Recent movies discovery failed: {e}")
+
+
+def create_missing_day_pages(movie_id: str, title: str, release_date: str):
+    """Create all missing day pages from Day 1 to today"""
+    try:
+        today = datetime.now().date()
+        today_str = today.strftime('%Y-%m-%d')
+        
+        current_day = calculate_day_number(release_date, today_str)
+        
+        logger.info(f"Creating missing day pages for {title} (Day 1 to Day {current_day})")
+        
+        for day in range(1, current_day + 1):
+            # Check if exists
+            existing = directus_get(
+                f"/items/daily_stats?filter[movie_id][_eq]={movie_id}&filter[day_number][_eq]={day}&limit=1"
+            )
+            
+            if existing.get('data'):
+                continue
+            
+            # Create page
+            day_date = (datetime.strptime(release_date, '%Y-%m-%d') + timedelta(days=day - 1)).strftime('%Y-%m-%d')
+            
+            stats_payload = {
+                'movie_id': movie_id,
+                'day_number': day,
+                'date': day_date,
+                'india_net': 0,
+                'is_estimate': True,
+                'seo_content': '',
+                'slug': slugify(f"{title}-day-{day}-box-office-collection"),
+                'tags': [title, f"day {day}", "box office"]
+            }
+            
+            result = directus_post('/items/daily_stats', stats_payload)
+            
+            if result.get('data'):
+                # Queue AI job
+                enqueue_job('queue:content_generation', {
+                    'type': 'daily_box_office_prediction',
+                    'movie_id': movie_id,
+                    'day_number': day,
+                    'movie_title': title,
+                    'mode': 'prediction'
+                })
+                
+                logger.info(f"✅ Created Day {day} page")
+        
+    except Exception as e:
+        logger.error(f"Create missing pages failed: {e}")
 
 # ============================================================================
 # DAILY PAGES (00:05 AM)
@@ -584,7 +807,7 @@ def check_movie_still_tracked(movie: Dict) -> bool:
         
         logger.info(f"Expected: {expected_days}, Actual: {actual_days}, Gap: {gap}")
         
-        return gap < 2
+        return gap < 3
         
     except Exception as e:
         logger.error(f"Gap check failed: {e}")
@@ -1010,33 +1233,25 @@ def budget_llm_precheck(entry: Dict, movies_context: str, people_context: str) -
         title = entry.get('title', '')
         description = entry.get('description', '')[:200]
         
-        prompt = f"""Analyze this entertainment news headline.
+        prompt = f"""Analyze this entertainment news article and match it to known movies and people.
 
-HEADLINE: {title}
+        HEADLINE: {title}
+        SNIPPET: {description}
 
-SNIPPET: {description}
+        KNOWN MOVIES:
+        {movies_context[:1000]}
 
-AVAILABLE MOVIES:
-{movies_context[:1000]}
+        KNOWN PEOPLE:
+        {people_context[:1000]}
 
-AVAILABLE PEOPLE:
-{people_context[:1000]}
-
-Determine:
-1. Is this relevant entertainment news?
-2. Which movie(s)?
-3. Which people?
-4. Category: news, review, or ott
-5. Confidence (0-1)
-
-Return ONLY JSON:
-{{
-  "is_relevant": true/false,
-  "confidence": 0.95,
-  "movie_ids": ["uuid1"],
-  "people_ids": ["uuid1"],
-  "category_id": "uuid"
-}}"""
+        Return ONLY valid JSON, no explanation:
+        {{
+        "is_relevant": true/false,
+        "confidence": 0.0-1.0,
+        "movie_ids": [],
+        "people_ids": [],
+        "category": "news|review|ott"
+        }}"""
         
         result = call_openrouter(model, prompt, 0.3, 500)
         
@@ -1159,6 +1374,7 @@ def run_publishing_pipeline():
     try:
         logger.info("🚀 STARTING PUBLISHING PIPELINE")
         discover_new_movies()
+        discover_recent_movies()
         update_announced_movies()
         transition_movies_to_running()
         create_daily_pages()

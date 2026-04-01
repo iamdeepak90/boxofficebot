@@ -78,36 +78,43 @@ def process_news_article(job_data: Dict) -> bool:
                 movie_titles=', '.join(movie_titles) if movie_titles else 'None',
                 people_names=', '.join(people_names) if people_names else 'None',
                 category_name=category_name,
-                research_context=research_context[:2000]
+                research_context=research_context[:3000]
             )
             logger.info("Using category-specific prompt")
         else:
             logger.warning("No category prompt, using default")
-            generation_prompt = f"""Generate a comprehensive article based on this news.
+            generation_prompt = f"""You are a senior entertainment journalist writing for a high-traffic film news publication.
 
-HEADLINE: {title}
-SOURCE: {source_url}
+            HEADLINE: {title}
+            SOURCE: {source_url}
+            CATEGORY: {category_name}
+            MOVIES: {', '.join(movie_titles) if movie_titles else 'None'}
+            PEOPLE: {', '.join(people_names) if people_names else 'None'}
 
-MOVIES: {', '.join(movie_titles) if movie_titles else 'None'}
-PEOPLE: {', '.join(people_names) if people_names else 'None'}
-CATEGORY: {category_name}
+            RESEARCH:
+            {research_context[:3000]}
 
-RESEARCH:
-{research_context[:2000]}
+            Write a 1000-1200 word article in HTML based on the research above.
 
-Generate 800-1000 word article with:
-- Engaging introduction
-- Detailed body with facts
-- Quotes if available
-- Analysis and context
-- Conclusion
-- FAQ section (4-5 questions)
+            STRUCTURE:
+            <h2>Opening</h2> — Lead with the most newsworthy detail, not the headline reworded. First sentence must make the reader want to continue.
+            <h2>The Full Story</h2> — Expand with facts, context, and implications drawn strictly from the research. Attribute claims to sources where possible.
+            <h2>Key Details</h2> — Supporting facts, relevant background, industry context. Use <blockquote> for any direct quotes found in research.
+            <h2>What This Means</h2> — Analyst perspective: why this matters for the film, the people involved, or the industry.
+            <h2>Frequently Asked Questions</h2> — 4-5 FAQs as <strong>Q: question</strong> followed by <p>answer</p> covering what readers would search next.
 
-For REVIEW: Include rating, pros/cons, verdict
-For NEWS: Latest updates, industry impact
-For OTT: Platform details, release info
+            CATEGORY-SPECIFIC:
+            - NEWS: Focus on latest developments, timeline, industry impact
+            - REVIEW: Add <h2>Verdict</h2> with a clear rating and pros/cons in <ul>
+            - OTT: Include platform name, release date, regions, and availability details prominently
 
-Return only the article text (not HTML yet)."""
+            RULES:
+            - Never invent quotes, facts, or figures not present in the research
+            - If research is thin, write what's known and acknowledge what's unclear — never pad with speculation
+            - All people and movie names must match exactly as provided above
+
+            AVOID: "It's worth noting", "Delve into", "Remarkable", "Testament to", "Needless to say", "In conclusion", "To summarize".
+            HTML only — no <html>/<body> wrappers, no inline styles, no markdown fences."""
         
         draft = stage_generation(generation_prompt, 'news')
         if not draft:
@@ -247,54 +254,57 @@ def process_daily_box_office(job_data: Dict) -> bool:
         
         # Build prompt
         if mode == 'prediction':
-            prompt = f"""Generate a Day {day_number} box office PREDICTION article for {movie_title}.
+            prompt = f"""You are a senior entertainment journalist writing for an Indian film trade publication.
 
-MOVIE DETAILS:
-- Title: {movie_title}
-- Budget: ₹{movie.get('budget', 'Unknown')} Cr
-- Genre: {', '.join(movie.get('genre', []))}
-- Languages: {', '.join(movie.get('language', []))}
-- India Gross so far: ₹{movie.get('india_gross_total', 0)} Cr
-- Overseas so far: ₹{movie.get('overseas_total', 0)} Cr
+        MOVIE: {movie_title} | Budget: ₹{budget or 'N/A'} Cr | Genre: {genre} | Languages: {languages}
+        TOTALS SO FAR: India Gross ₹{india_gross} Cr | Overseas ₹{overseas} Cr
+        PREVIOUS DAYS TREND:
+        {table_text}
 
-PREVIOUS DAYS:
-{table_text}
+        Write a Day {day_number} box office prediction article (~800 words) in HTML.
 
-Generate 800-word article with:
-- Expected collection range
-- Factors affecting performance
-- Comparison with previous days
-- Industry trends
-- FAQ section
+        PURPOSE: This is an SEO article — write for readers searching "{movie_title} Day {day_number} box office prediction". 
+        Do NOT repeat raw day-wise data in the content — that data is already displayed in a separate table on the page.
+        Focus on storytelling, context, and analysis that a reader genuinely wants to read.
 
-Use phrases: "expected to collect", "predicted", "estimated"
+        STRUCTURE:
+        <h2>What to Expect on Day {day_number}</h2> — Why this particular day matters for the film's run. Weekend vs weekday dynamics, competition, word of mouth momentum. Give a predicted range naturally within the prose.
+        <h2>How the Film Has Performed So Far</h2> — Narrative summary of the film's run without listing every day's figure. Talk about the overall trend — strong hold, sharp drop, steady weekday performance etc.
+        <h2>Factors That Will Shape Day {day_number}</h2> — 3-4 specific factors written as flowing paragraphs: audience reception, competition from new releases, regional vs national performance, multiplex vs single screen split.
+        <h2>Can {movie_title} Hit Its Target?</h2> — Budget recovery context, what milestone the film is chasing, realistic assessment of its overall run based on current trajectory.
+        <h2>Frequently Asked Questions</h2> — 5 FAQs written as <strong>Q: question</strong> followed by <p>answer</p>. Cover: Day {day_number} prediction, running total, overseas performance, budget recovery, overall verdict.
 
-Return only the article text (not HTML yet)."""
+        TONE: Analytical and conversational — like a knowledgeable trade writer, not a data sheet.
+        LANGUAGE: Use "expected", "likely", "projected" for predictions. Give ranges not single figures.
+        AVOID: Listing every day's collection figure. Raw data tables. "It's worth noting", "Delve into", "Remarkable", "Testament to", "Needless to say", "highly anticipated", "magnum opus".
+        HTML only — no <html>/<body> wrappers, no inline styles, no markdown fences."""
+
         else:
-            prompt = f"""Generate a Day {day_number} box office ACTUAL article for {movie_title}.
+            prompt = f"""You are a senior entertainment journalist writing for an Indian film trade publication.
 
-MOVIE DETAILS:
-- Title: {movie_title}
-- Budget: ₹{movie.get('budget', 'Unknown')} Cr
+        MOVIE: {movie_title} | Budget: ₹{budget or 'N/A'} Cr | Genre: {genre} | Languages: {languages}
+        DAY {day_number}: India Net ₹{india_net} Cr
+        TOTALS: India Gross ₹{india_gross} Cr | Overseas ₹{overseas} Cr | Worldwide ₹{worldwide} Cr
+        {roi_line}
+        PREVIOUS DAYS TREND:
+        {table_text}
 
-DAY {day_number} COLLECTION:
-- India Net: ₹{india_net} Cr
+        Write a Day {day_number} box office collection article (~800 words) in HTML.
 
-PREVIOUS DAYS:
-{table_text}
+        PURPOSE: This is an SEO article — write for readers searching "{movie_title} Day {day_number} box office collection".
+        Do NOT repeat raw day-wise data in the content — that data is already displayed in a separate table on the page.
+        Focus on what the numbers mean, not what the numbers are.
 
-TOTAL SO FAR:
-- India Gross: ₹{movie.get('india_gross_total', 0)} Cr
-- Overseas: ₹{movie.get('overseas_total', 0)} Cr
+        STRUCTURE:
+        <h2>{movie_title} Day {day_number} Box Office — How Did It Do?</h2> — Open with a one-sentence verdict on Day {day_number} (strong hold / expected drop / surprise jump). Mention ₹{india_net} Cr naturally in prose, then immediately give context: is this good or bad for a film of this budget and genre on this day of its run?
+        <h2>Reading the Trend</h2> — Analyse the overall trajectory without listing every figure. Is the film holding well? Dropping sharply? Recovering after a mid-week dip? What does the pattern tell us about audience behaviour and word of mouth?
+        <h2>Where Does It Stand Against Its Budget?</h2> — Budget recovery story in plain language. How close is it to breaking even? Is it already profitable? What does it need to hit to be called a hit, average, or flop by trade standards?
+        <h2>The Road Ahead</h2> — Realistic first week estimate, lifetime projection, and what would need to happen for the film to exceed or fall short of those projections. Ground it in the trend data.
+        <h2>Frequently Asked Questions</h2> — 5 FAQs as <strong>Q: question</strong> followed by <p>answer</p>. Cover: Day {day_number} collection, running total, worldwide gross, budget recovery status, is the film a hit or flop.
 
-Generate 800-word article with:
-- Day {day_number} collection analysis
-- Comparison with previous days
-- Running total
-- HTML table with day-wise breakdown
-- FAQ section
-
-Return only the article text (not HTML yet)."""
+        TONE: Analytical and conversational — like a knowledgeable trade writer giving their honest read.
+        AVOID: Listing every day's collection figure. Raw data tables. "It's worth noting", "Delve into", "Remarkable", "Testament to", "Needless to say", "highly anticipated".
+        HTML only — no <html>/<body> wrappers, no inline styles, no markdown fences."""
         
         # STAGE 1: Generation
         draft = stage_generation(prompt, 'daily')

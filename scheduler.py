@@ -398,25 +398,55 @@ def generate_hub_content(movie: Dict) -> Dict:
         cast_text = ', '.join(cast_names) if cast_names else "Star cast"
         
         # Stage 1: Generation
-        prompt = f"""You are a senior entertainment journalist writing for film trade publication.
+        prompt = f"""You are a senior entertainment journalist writing for a film trade publication.
 
         MOVIE: {title} | Released: {release_date} | Languages: {languages} | Genre: {genres}
         BUDGET: ₹{budget} Cr
         CAST: {cast_text}
         PLOT: {plot}
 
-        Write an 800-1000 word box office hub page for '{title}' in HTML. This page is the central tracking page for the film's entire theatrical run.
+        Write an 800-1000 word box office hub page for '{title}' in HTML. This is the central SEO landing page for the film's entire theatrical run.
 
-        PURPOSE: SEO landing page for readers searching "{title} box office collection". Write editorially — no raw data tables, those are displayed separately on the page.
+        IMPORTANT:
+        - Keep the section structure fixed, but make the writing fully specific to this film
+        - Every section must reflect this movie's unique genre, cast, language market, plot setup, and release context
+        - Do not use generic filler that could apply to any movie
+        - Do not repeat the same sentence patterns commonly used in entertainment SEO copy
+        - Do not invent box office figures, milestones, or verdicts unless explicitly provided
+        - No raw data tables, since day-wise figures are shown separately on the page
 
         STRUCTURE:
-        <h2>About {title}</h2> — 2-3 para editorial intro: what the film is, who made it, why it matters. Weave in genre, languages, and cast naturally.
-        <h2>{title} Box Office Performance</h2> — General narrative about the film's theatrical journey and what to watch for. No specific figures unless provided.
-        <h2>Cast & Crew</h2> — Key cast and crew written as engaging prose, not a list. Highlight notable names and their significance.
-        <h2>Budget & Recovery</h2> — Budget context: what the film needs to break even, what would make it a hit by trade standards.
-        <h2>Frequently Asked Questions</h2> — 5 FAQs as <strong>Q: question</strong> followed by <p>answer</p>. Cover: release date, languages, budget, cast, box office verdict.
+        <h2>About {title}</h2>
+        Write 2-3 short paragraphs introducing the film, what kind of movie it is, who is involved, and what makes it notable in its release context. Use the plot, genre, language, and cast naturally.
 
-        AVOID: Raw day-wise data. "It's worth noting", "Delve into", "Remarkable", "Testament to", "Needless to say", "highly anticipated".
+        <h2>{title} Box Office Performance</h2>
+        Write 2-3 short paragraphs framing the film's theatrical journey, audience appeal, market positioning, and the main factors likely to influence its run. Keep it specific to this title.
+
+        <h2>Cast & Crew</h2>
+        Write 1-2 paragraphs in engaging prose about the principal cast and key creators. Mention why these names matter for this film specifically. Do not write as a list.
+
+        <h2>Budget & Recovery</h2>
+        Write 1-2 paragraphs explaining the budget context, recovery discussion, and what the film would need commercially to be seen as average, successful, or underperforming by trade standards. Keep it grounded in this movie's scale and positioning.
+
+        <h2>Frequently Asked Questions</h2>
+        Write exactly 5 FAQs in this exact format:
+        <p><strong>Q: question</strong></p>
+        <p>answer</p>
+
+        Cover:
+        - release date
+        - languages
+        - budget
+        - cast
+        - box office verdict
+
+        AVOID:
+        "It's worth noting", "Delve into", "Remarkable", "Testament to", "Needless to say", "Highly anticipated"
+        Also avoid generic openings like:
+        - "The film has attracted attention..."
+        - "Much will depend on word of mouth..."
+        - "The movie is expected to..."
+
         HTML only — no <html>/<body> wrappers, no inline styles, no markdown fences."""
         
         draft = stage_generation(prompt, 'hub')
@@ -431,13 +461,11 @@ def generate_hub_content(movie: Dict) -> Dict:
         # Stage 3: SEO
         seo_data = stage_seo(humanized, f"{title} Box Office Collection", 'hub')
         
-        if seo_data:
-            return seo_data
-        
         return {
             "main_content": humanized,
-            "meta_title": f"{title} Box Office Collection Day Wise",
-            "meta_description": f"Track {title} box office collection day wise."
+            "meta_title": seo_data.get('meta_title', f"{title} Box Office Collection Day Wise") if seo_data else f"{title} Box Office Collection Day Wise",
+            "meta_description": seo_data.get('meta_description', f"Track {title} box office collection day wise.") if seo_data else f"Track {title} box office collection day wise.",
+            "tags": seo_data.get('tags', [title, 'box office collection']) if seo_data else [title, 'box office collection']
         }
         
     except Exception as e:
@@ -660,7 +688,6 @@ def create_missing_day_pages(movie_id: str, title: str, release_date: str):
                 'date': day_date,
                 'india_net': 0,
                 'is_estimate': True,
-                'seo_content': '',
                 'slug': slugify(f"{title}-day-{day}-box-office-collection"),
                 'tags': [title, f"day {day}", "box office"]
             }
@@ -747,7 +774,6 @@ def create_daily_pages():
                     'date': today_str,
                     'india_net': 0,
                     'is_estimate': True,
-                    'seo_content': '',
                     'slug': slugify(f"{title}-day-{day_number}-box-office-collection"),
                     'tags': [title, f"day {day_number}", "box office"]
                 }
@@ -947,7 +973,6 @@ def scrape_all_running_movies():
                             'date': day_date,
                             'india_net': india_net,
                             'is_estimate': False,
-                            'seo_content': '',
                             'slug': slugify(f"{title}-day-{day_number}-box-office-collection"),
                             'tags': [title, f"day {day_number}"]
                         }

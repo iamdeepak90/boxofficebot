@@ -47,7 +47,7 @@ try:
         password=REDIS_PASSWORD,
         decode_responses=True,
         socket_connect_timeout=10,
-        socket_timeout=10,
+        socket_timeout=45,
     )
     redis_client.ping()
     logger.info(f"✅ Redis connected successfully to {REDIS_HOST}:{REDIS_PORT}")
@@ -686,11 +686,10 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
         logger.error(f"Table parsing failed: {e}")
         return None
 
-def scrape_sacnilk_upcoming() -> List[Dict]:
+def scrape_sacnilk_movies(sacnilk_url: str) -> List[Dict]:
     """Scrape Sacnilk upcoming movies page"""
     try:
-        url = "https://sacnilk.com/entertainmenttopbar/Upcoming_Movies"
-        html = get_page_content(url)
+        html = get_page_content(sacnilk_url)
         
         if not html:
             return []
@@ -710,112 +709,18 @@ def scrape_sacnilk_upcoming() -> List[Dict]:
                 continue
 
             title_tag = card.find("h3")
-            date_tag = card.find("div", class_="text-[10px] text-gray-300 font-medium")
-            img_tag = card.find("img")
-
             title = title_tag.get_text(strip=True) if title_tag else None
-            release_date_raw = date_tag.get_text(strip=True) if date_tag else None
-            poster_url = img_tag.get("src") if img_tag else None
-
-            release_date = None
-            if release_date_raw:
-                try:
-                    release_date = datetime.strptime(release_date_raw, "%b %d, %Y").date().isoformat()
-                except ValueError:
-                    release_date = release_date_raw
 
             movies.append({
                 "title": title,
                 "sacnilk_source_url": urljoin("https://sacnilk.com", href),
                 "slug": f"{slugify(title)}-{str(release_date)[:4]}" if title and release_date and str(release_date)[:4].isdigit() else slugify(title) if title else None,
-                "poster_url": poster_url,
-                "image_alt": title,
-                "release_date": release_date,
-                "release_date_raw": release_date_raw,
-                "languages": card.get("data-languages", "").strip(),
-                "genre": card.get("data-genres", "").strip(),
             })
 
         return movies
         
     except Exception as e:
         logger.error(f"Sacnilk upcoming scrape failed: {e}")
-        return []
-
-
-def scrape_sacnilk_recent_movies() -> List[Dict]:
-    """Scrape Sacnilk recent/running movies page"""
-    try:
-        url = "https://sacnilk.com/entertainmenttopbar/Recent_Movies"
-        html = get_page_content(url)
-        
-        if not html:
-            return []
-        
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        movies = []
-        
-        # Find movie cards (similar to upcoming page structure)
-        movie_cards = soup.find_all("a", href=re.compile(r"/movie/"), attrs={"data-genres": True})
-        
-        for card in movie_cards:
-            try:
-                href = card.get("href", "")
-                if not href or "/movie/" not in href:
-                    continue
-                
-                # Extract title
-                title_el = card.find("h3")
-                title = _text(title_el) if title_el else None
-                
-                if not title:
-                    continue
-                
-                # Extract data attributes
-                genres_raw = card.get("data-genres", "").strip()
-                languages_raw = card.get("data-languages", "").strip()
-                
-                # Extract release date from card
-                date_div = card.find("div", class_="text-[10px]")
-                release_date_raw = _text(date_div) if date_div else None
-                
-                # Parse release date
-                release_date = None
-                if release_date_raw:
-                    try:
-                        release_date = datetime.strptime(release_date_raw, "%b %d, %Y").strftime("%Y-%m-%d")
-                    except:
-                        pass
-                
-                # Extract poster
-                poster_img = card.find("img")
-                poster_url = poster_img.get("src") if poster_img else None
-                
-                # Build slug
-                slug = f"{slugify(title)}-{release_date[:4]}" if title and release_date and len(release_date) >= 4 else slugify(title) if title else None
-                
-                movies.append({
-                    "title": title,
-                    "sacnilk_source_url": urljoin("https://sacnilk.com", href),
-                    "slug": slug,
-                    "poster_url": poster_url,
-                    "image_alt": title,
-                    "release_date": release_date,
-                    "release_date_raw": release_date_raw,
-                    "languages": languages_raw,
-                    "genres": genres_raw
-                })
-                
-            except Exception as e:
-                logger.error(f"Error parsing recent movie card: {e}")
-                continue
-        
-        logger.info(f"Found {len(movies)} recent movies")
-        return movies
-        
-    except Exception as e:
-        logger.error(f"Recent movies scrape failed: {e}")
         return []
 
 
@@ -1200,10 +1105,7 @@ def _extract_cast_and_crew(soup: BeautifulSoup) -> list:
             
             # Get text from span.truncate
             span = el.find("span", class_="truncate")
-            if not span:
-                continue
-            
-            text = _text(span)
+            text = _text(span) if span else _text(el)
             if not text:
                 continue
             

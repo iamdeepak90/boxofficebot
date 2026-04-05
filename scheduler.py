@@ -10,6 +10,7 @@ import sys
 import os
 from common import *
 from datetime import datetime, timedelta
+from typing import Optional
 import time
 import random
 import schedule
@@ -26,7 +27,7 @@ def discover_new_movies():
     logger.info("=" * 60)
     
     try:
-        movies = scrape_sacnilk_upcoming()
+        movies = scrape_sacnilk_movies('https://sacnilk.com/entertainmenttopbar/Upcoming_Movies')
         
         if not movies:
             logger.info("No movies found on upcoming page")
@@ -64,11 +65,11 @@ def discover_new_movies():
                 cast_ids = []
                 for person_data in movie_data.get('cast_and_crew', []):
                     person_id = get_or_create_person(
-                        name=person_data['name'],
-                        types=person_data['types'],
+                        name=person_data.get('name', '').strip(),
+                        types=person_data.get('types', []),
                         sacnilk_url=person_data.get('sacnilk_url')
                     )
-                    if person_id:
+                    if person_id and person_id not in cast_ids:
                         cast_ids.append(person_id)
                 
                 # Humanize summary (2 stages: Gen → Humanize)
@@ -90,7 +91,7 @@ def discover_new_movies():
                     'slug': movie_data.get('slug'),
                     'release_date': movie_data.get('release_date'),
                     'language': movie_data.get('languages', ''),
-                    'genre': movie_data.get('genres', ''),
+                    'genre': movie_data.get('genre', ''),
                     'sacnilk_source_url': sacnilk_url,
                     'poster': poster_uuid,
                     'budget': movie_data.get('budget', 0),
@@ -186,15 +187,37 @@ def update_announced_movies():
                     continue
                 
                 # Merge cast
-                existing_cast = movie.get('cast_crew', [])
+                existing_cast_raw = movie.get('cast_crew', [])
+                existing_cast_ids = []
+
+                for item in existing_cast_raw:
+                    if isinstance(item, dict):
+                        pid = item.get('people_id')
+
+                        # Expanded relation case: {'people_id': {'id': 78, ...}}
+                        if isinstance(pid, dict):
+                            pid = pid.get('id')
+
+                        # Direct relation object case: {'id': 123, 'people_id': 78}
+                        if not pid and item.get('id') and item.get('people_id'):
+                            pid = item.get('people_id')
+
+                        if pid:
+                            existing_cast_ids.append(pid)
+
+                    elif item:
+                        existing_cast_ids.append(item)
+
                 for person_data in details.get('cast_and_crew', []):
                     person_id = get_or_create_person(
-                        name=person_data['name'],
-                        types=person_data['types'],
+                        name=person_data.get('name', '').strip(),
+                        types=person_data.get('types', []),
                         sacnilk_url=person_data.get('sacnilk_url')
                     )
-                    if person_id and person_id not in existing_cast:
-                        existing_cast.append(person_id)
+                    if person_id and person_id not in existing_cast_ids:
+                        existing_cast_ids.append(person_id)
+
+                existing_cast_ids = list(dict.fromkeys(existing_cast_ids))
 
                 # Update Poster only if existing movie does not already have poster
                 existing_poster = movie.get('poster')
@@ -220,7 +243,7 @@ def update_announced_movies():
                     'overseas_total': details.get('overseas_total', movie.get('overseas_total')),
                     'cast_and_crew': details.get('cast_and_crew', movie.get('cast_and_crew', [])),
                     'tags': details.get('tags', movie.get('tags', [])),
-                    'cast_crew': [{'people_id': pid} for pid in existing_cast],
+                    'cast_crew': [{'people_id': pid} for pid in existing_cast_ids],
                     **({'poster': details['poster']} if details.get('poster') else {})
                 }
                 
@@ -242,35 +265,77 @@ def update_announced_movies():
 
 
 def humanize_plot(raw_plot: str, movie_title: str) -> str:
-    """Humanize plot (2 stages: Gen → Humanize, NO SEO)"""
+    """
+    Rewrite a scraped plot into a clean, human-readable short synopsis,
+    or generate one if raw_plot is missing.
+    """
     try:
-        if not raw_plot:
-            return ""
-        
-        prompt = f"""You are a film critic writing plot summaries for a premium movie database.
+        logger.info(f"Humanizing plot for: {movie_title}")
 
-        MOVIE: {movie_title}
+        model = get_setting("plot_humanize_model", "deepseek/deepseek-v3.2")
+        temperature = get_setting("plot_humanize_temperature", 0.8)
+        max_tokens = get_setting("plot_humanize_max_tokens", 2000)
 
-        PLOT:
-        {raw_plot}
+        raw_plot = (raw_plot or "").strip()
+        movie_title = (movie_title or "").strip()
 
-        Rewrite into exactly 60-80 words total. Hook the reader, build tension, never reveal the ending. Present tense. Vivid and specific — no clichés, no spoilers, no AI phrases like "delve into" or "testament to".
+        if raw_plot:
+            prompt = f"""You are a professional entertainment writer.
 
-        Return only the rewritten plot."""
+Rewrite the following movie plot into a clean, engaging, human-readable synopsis for "{movie_title}".
+
+STRICT RULES:
+- Output plain text only
+- No HTML
+- No markdown
+- No title
+- No labels
+- No bullet points
+- Total length must be exactly 60-80 words
+- Use only 1 or 2 short paragraphs
+- Keep the meaning faithful to the source
+- Remove scraped noise, repetition, awkward phrasing, and spoilers where possible
+- Make it natural and editorially polished
+
+SOURCE PLOT:
+{raw_plot}
+
+Return only the final rewritten plot."""
+        else:
+            prompt = f"""You are a professional entertainment writer.
+
+Write a short, clean, engaging movie plot synopsis for "{movie_title}".
+
+STRICT RULES:
+- Output plain text only
+- No HTML
+- No markdown
+- No title
+- No labels
+- No bullet points
+- Total length must be exactly 60-80 words
+- Use only 1 or 2 short paragraphs
+- Keep it general and spoiler-light
+- Sound natural, polished, and editorial
+
+Return only the final plot."""
         
-        draft = stage_generation(prompt, 'plot')
-        if not draft:
-            return raw_plot
-        
-        humanized = stage_humanize(draft, 'plot')
-        if humanized:
-            return humanized
-        
-        return draft
-        
+        result = call_openrouter(model, prompt, temperature, max_tokens)
+
+        if not result:
+            logger.warning("Plot humanization/generation failed")
+            return raw_plot[:400].strip() if raw_plot else ""
+
+        result = result.strip()
+
+        # Basic cleanup to enforce plain text only
+        result = result.replace("```", "").replace("<p>", "").replace("</p>", "").strip()
+
+        return result
+
     except Exception as e:
-        logger.error(f"Plot humanization failed: {e}")
-        return raw_plot
+        logger.error(f"Plot humanization failed for '{movie_title}': {e}")
+        return raw_plot[:400].strip() if raw_plot else ""
 
 
 def send_new_movie_notification(movie_data: Dict, movie_id: str):
@@ -489,7 +554,7 @@ def discover_recent_movies():
         seven_days_ago = (today - timedelta(days=7)).strftime('%Y-%m-%d')
         
         # Scrape recent movies page
-        movies = scrape_sacnilk_recent_movies()
+        movies = scrape_sacnilk_movies('https://sacnilk.com/entertainmenttopbar/Recent_Movies')
         
         if not movies:
             logger.info("No recent movies found")
@@ -574,15 +639,15 @@ def discover_recent_movies():
                     if details:
                         movie_data.update(details)
                     
-                    # Process cast
+                    # Process cast & crew
                     cast_ids = []
                     for person_data in movie_data.get('cast_and_crew', []):
                         person_id = get_or_create_person(
-                            name=person_data['name'],
-                            types=person_data['types'],
+                            name=person_data.get('name', '').strip(),
+                            types=person_data.get('types', []),
                             sacnilk_url=person_data.get('sacnilk_url')
                         )
-                        if person_id:
+                        if person_id and person_id not in cast_ids:
                             cast_ids.append(person_id)
                     
                     # Humanize plot
@@ -609,7 +674,7 @@ def discover_recent_movies():
                         'slug': movie_data.get('slug'),
                         'release_date': release_date,
                         'language': movie_data.get('languages', ''),
-                        'genre': movie_data.get('genres', ''),
+                        'genre': movie_data.get('genre', ''),
                         'sacnilk_source_url': sacnilk_url,
                         'poster': poster_uuid,
                         'budget': movie_data.get('budget', 0),

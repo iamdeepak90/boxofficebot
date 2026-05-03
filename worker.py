@@ -237,6 +237,15 @@ def process_daily_box_office(job_data: Dict) -> bool:
         # Fetch movie details
         movie_result = directus_get(f"/items/movies/{movie_id}")
         movie = movie_result.get('data', {})
+
+        # Extract all variables needed for prompts
+        budget = movie.get('budget') or 0
+        genre = ', '.join(movie.get('genre', [])) if isinstance(movie.get('genre'), list) else (movie.get('genre') or 'N/A')
+        languages = ', '.join(movie.get('language', [])) if isinstance(movie.get('language'), list) else (movie.get('language') or 'N/A')
+        india_gross = movie.get('india_gross_total') or 0
+        overseas = movie.get('overseas_total') or 0
+        worldwide = india_gross + overseas
+        roi_line = f"- Budget recovered: {(india_gross / budget * 100):.1f}% (India Gross only)" if budget and india_gross else ""
         
         # Fetch all daily_stats
         stats_result = directus_get(

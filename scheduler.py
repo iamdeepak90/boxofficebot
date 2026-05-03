@@ -60,6 +60,10 @@ def discover_new_movies():
                 details = scrape_movie_details(sacnilk_url)
                 if details:
                     movie_data.update(details)
+                    # Now that we have release_date, build proper slug with year
+                    release_year = str(movie_data.get('release_date', ''))[:4]
+                    if release_year.isdigit():
+                        movie_data['slug'] = f"{slugify(title)}-{release_year}"
                 
                 # Process cast & crew
                 cast_ids = []
@@ -80,31 +84,42 @@ def discover_new_movies():
                 
                 # Upload poster
                 poster_uuid = None
-                poster_url = movie_data.get('poster_url')
-                if poster_url:
+                poster_url = movie_data.get('poster')  # scrape_movie_details returns key 'poster', not 'poster_url'
+                if poster_url and poster_url.startswith('http'):
                     poster_uuid = upload_file_to_directus(file_url=poster_url, title=slugify(title))
+                    if not poster_uuid:
+                        logger.warning(f"Poster unavailable for '{title}', creating without poster")
                 
                 # Create movie
+                ott_platform = movie_data.get('ott_platform')
+                if isinstance(ott_platform, list):
+                    ott_platform = ', '.join(ott_platform) if ott_platform else None
+
                 create_data = {
                     'status': 'announced',
                     'title': title,
                     'slug': movie_data.get('slug'),
                     'release_date': movie_data.get('release_date'),
-                    'language': movie_data.get('languages', ''),
-                    'genre': movie_data.get('genre', ''),
+                    'language': movie_data.get('languages') or None,
+                    'genre': movie_data.get('genre') or None,
                     'sacnilk_source_url': sacnilk_url,
                     'poster': poster_uuid,
-                    'budget': movie_data.get('budget', 0),
-                    'plot': movie_data.get('plot', ''),
-                    'runtime': movie_data.get('runtime'),
-                    'cbfc_rating': movie_data.get('cbfc_rating'),
-                    'ott_platform': movie_data.get('ott_platform'),
-                    'ott_release_date': movie_data.get('ott_release_date'),
+                    'budget': movie_data.get('budget') or None,
+                    'plot': movie_data.get('plot') or None,
+                    'runtime': movie_data.get('runtime') or None,
+                    'cbfc_rating': movie_data.get('cbfc_rating') or None,
+                    'ott_platform': ott_platform,
+                    'ott_release_date': movie_data.get('ott_release_date') or None,
                     'cast_crew': [{'people_id': pid} for pid in cast_ids],
-                    'tags': movie_data.get('tags', [])
+                    'tags': movie_data.get('tags') or []
                 }
                 
                 result = directus_post('/items/movies', create_data)
+
+                if not result or not result.get('data'):
+                    logger.error(f"Failed to create movie in Directus: {title}")
+                    continue
+
                 movie_id = result.get('data', {}).get('id')
                 
                 if movie_id:
@@ -241,7 +256,6 @@ def update_announced_movies():
                     'ott_release_date': details.get('ott_release_date', movie.get('ott_release_date')),
                     'india_gross_total': details.get('india_gross_total', movie.get('india_gross_total')),
                     'overseas_total': details.get('overseas_total', movie.get('overseas_total')),
-                    'cast_and_crew': details.get('cast_and_crew', movie.get('cast_and_crew', [])),
                     'tags': details.get('tags', movie.get('tags', [])),
                     'cast_crew': [{'people_id': pid} for pid in existing_cast_ids],
                     **({'poster': details['poster']} if details.get('poster') else {})
@@ -452,9 +466,17 @@ def generate_hub_content(movie: Dict) -> Dict:
         languages = ', '.join(movie.get('language', []))
         genres = ', '.join(movie.get('genre', []))
         
-        # Get cast names
+        # Get cast names — handle M2M format [{'people_id': 'uuid'}, ...]
         cast_names = []
-        for person_id in movie.get('cast_crew', [])[:5]:
+        for item in (movie.get('cast_crew', []) or [])[:5]:
+            if isinstance(item, dict):
+                person_id = item.get('people_id')
+                if isinstance(person_id, dict):  # nested: {'people_id': {'id': ...}}
+                    person_id = person_id.get('id')
+            else:
+                person_id = item
+            if not person_id:
+                continue
             result = directus_get(f"/items/people/{person_id}?fields=name")
             person = result.get('data', {})
             if person:
@@ -569,15 +591,23 @@ def discover_recent_movies():
             try:
                 title = movie_data.get('title')
                 sacnilk_url = movie_data.get('sacnilk_source_url')
-                release_date = movie_data.get('release_date')
-                
-                if not title or not sacnilk_url or not release_date:
+
+                if not title or not sacnilk_url:
                     continue
-                
+
+                # Scrape details first to get release_date (not available on listing page)
+                details = scrape_movie_details(sacnilk_url)
+                if not details or not details.get('release_date'):
+                    logger.info(f"Skipping {title}: no release_date found")
+                    continue
+
+                release_date = details['release_date']
+                movie_data.update(details)
+
                 # Skip if older than 7 days
                 if release_date < seven_days_ago:
                     continue
-                
+
                 logger.info(f"Processing: {title} (Released: {release_date})")
                 
                 # Check if movie exists
@@ -634,10 +664,7 @@ def discover_recent_movies():
                     # Movie doesn't exist - create it as running
                     logger.info(f"Creating new movie: {title}")
                     
-                    # Scrape full details
-                    details = scrape_movie_details(sacnilk_url)
-                    if details:
-                        movie_data.update(details)
+                    # details already scraped above — no need to re-scrape
                     
                     # Process cast & crew
                     cast_ids = []
@@ -658,8 +685,8 @@ def discover_recent_movies():
                     
                     # Upload poster (don't fail if fails)
                     poster_uuid = None
-                    poster_url = movie_data.get('poster_url')
-                    if poster_url:
+                    poster_url = movie_data.get('poster')  # scrape_movie_details returns key 'poster', not 'poster_url'
+                    if poster_url and poster_url.startswith('http'):
                         try:
                             poster_uuid = upload_file_to_directus(file_url=poster_url, title=slugify(title))
                             if poster_uuid:
@@ -688,6 +715,11 @@ def discover_recent_movies():
                     }
                     
                     result = directus_post('/items/movies', create_data)
+
+                    if not result or not result.get('data'):
+                        logger.error(f"Failed to create movie in Directus: {title}")
+                        continue
+
                     movie_id = result.get('data', {}).get('id')
                     
                     if movie_id:
@@ -998,7 +1030,7 @@ def scrape_all_running_movies():
                 # Update daily stats
                 today = datetime.now().date().strftime('%Y-%m-%d')
                 
-                f# In scrape_all_running_movies() around line ~600
+                # Update each day's stats from scraped data
 
                 for day_data in parsed['days']:
                     day_number = day_data['day_number']

@@ -714,7 +714,7 @@ def scrape_sacnilk_movies(sacnilk_url: str) -> List[Dict]:
             movies.append({
                 "title": title,
                 "sacnilk_source_url": urljoin("https://sacnilk.com", href),
-                "slug": f"{slugify(title)}-{str(release_date)[:4]}" if title and release_date and str(release_date)[:4].isdigit() else slugify(title) if title else None,
+                "slug": slugify(title) if title else None,  # slug will be updated with year after detail scrape
             })
 
         return movies
@@ -1590,7 +1590,7 @@ def extract_people_from_text(text: str, existing_people_ids: List[str]) -> List[
             if not name or not isinstance(name, str):
                 continue
             
-            person_id = get_or_create_person(name, 'actor')
+            person_id = get_or_create_person(name, ['actor'])
             if person_id and person_id not in all_people_ids:
                 all_people_ids.append(person_id)
         
@@ -1645,15 +1645,17 @@ def add_internal_links(content: str, context: Dict) -> str:
             if not title or not slug:
                 continue
             
-            # Find first 2 occurrences
             pattern = re.compile(re.escape(title), re.IGNORECASE)
-            matches = list(pattern.finditer(content))
-            
-            for i, match in enumerate(matches[:2]):
-                if i == 0:
-                    # First occurrence - link to hub
-                    link = f'<a href="/box-office/{slug}">{match.group()}</a>'
-                    content = content[:match.start()] + link + content[match.end():]
+            count = 0
+
+            def replace_movie(match, slug=slug):
+                nonlocal count
+                count += 1
+                if count <= 2:
+                    return f'<a href="/box-office/{slug}">{match.group()}</a>'
+                return match.group()
+
+            content = pattern.sub(replace_movie, content)
         
         # Link people (first 2 occurrences only)
         for person in people:
@@ -1664,23 +1666,33 @@ def add_internal_links(content: str, context: Dict) -> str:
                 continue
             
             pattern = re.compile(re.escape(name), re.IGNORECASE)
-            matches = list(pattern.finditer(content))
-            
-            for i, match in enumerate(matches[:2]):
-                link = f'<a href="/people/{slug}">{match.group()}</a>'
-                content = content[:match.start()] + link + content[match.end():]
+            count = 0
+
+            def replace_person(match, slug=slug):
+                nonlocal count
+                count += 1
+                if count <= 2:
+                    return f'<a href="/people/{slug}">{match.group()}</a>'
+                return match.group()
+
+            content = pattern.sub(replace_person, content)
         
-        # Link "Day X" mentions (if day_number provided)
+        # Link "Day X" mentions (first 3 occurrences only)
         if day_number and movies:
             movie_slug = movies[0].get('slug', '')
             if movie_slug:
                 pattern = re.compile(r'\bDay (\d+)\b')
-                matches = list(pattern.finditer(content))
-                
-                for match in matches[:3]:
-                    day_num = match.group(1)
-                    link = f'<a href="/box-office/{movie_slug}/day-{day_num}">Day {day_num}</a>'
-                    content = content[:match.start()] + link + content[match.end():]
+                count = 0
+
+                def replace_day(match, movie_slug=movie_slug):
+                    nonlocal count
+                    count += 1
+                    if count <= 3:
+                        day_num = match.group(1)
+                        return f'<a href="/box-office/{movie_slug}/day-{day_num}">Day {day_num}</a>'
+                    return match.group()
+
+                content = pattern.sub(replace_day, content)
         
         # Add related articles section
         related_html = get_related_articles_html(movie_ids, people_ids, current_slug)
@@ -1698,41 +1710,40 @@ def add_internal_links(content: str, context: Dict) -> str:
 def get_related_articles_html(movie_ids: List[str], people_ids: List[str], current_slug: str, limit: int = 3) -> str:
     """Get related articles HTML section"""
     try:
-        # Build filter query
-        filters = []
-        
-        if movie_ids:
-            movie_filter = " OR ".join([f"movie_id[_contains]={mid}" for mid in movie_ids])
-            filters.append(f"({movie_filter})")
-        
-        if people_ids:
-            people_filter = " OR ".join([f"people_id[_contains]={pid}" for pid in people_ids])
-            filters.append(f"({people_filter})")
-        
-        if not filters:
+        if not movie_ids and not people_ids:
             return ""
-        
-        # Query Directus
-        filter_str = " OR ".join(filters)
-        result = directus_get(
-            f"/items/news_articles?filter[_or][0][{filter_str}]&filter[slug][_neq]={current_slug}&filter[status][_eq]=published&sort=-date_created&limit={limit}&fields=title,slug"
-        )
-        
+
+        # Build proper Directus _or filter params
+        params = []
+        for i, mid in enumerate(movie_ids):
+            params.append(f"filter[_or][{i}][movie_id][_contains]={mid}")
+        offset = len(movie_ids)
+        for i, pid in enumerate(people_ids):
+            params.append(f"filter[_or][{offset + i}][people_id][_contains]={pid}")
+
+        params.append(f"filter[slug][_neq]={current_slug}")
+        params.append("filter[status][_eq]=published")
+        params.append("sort=-date_created")
+        params.append(f"limit={limit}")
+        params.append("fields=title,slug")
+
+        query_string = "&".join(params)
+        result = directus_get(f"/items/news_articles?{query_string}")
         articles = result.get('data', [])
-        
+
         if not articles:
             return ""
-        
-        # Build HTML
+
         html = '<h2>Related Articles</h2>\n<ul>\n'
         for article in articles:
             title = article.get('title', '')
             slug = article.get('slug', '')
-            html += f'  <li><a href="/news/{slug}">{title}</a></li>\n'
+            if title and slug:
+                html += f'  <li><a href="/news/{slug}">{title}</a></li>\n'
         html += '</ul>'
-        
+
         return html
-        
+
     except Exception as e:
         logger.error(f"Related articles failed: {e}")
         return ""

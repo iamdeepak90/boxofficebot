@@ -255,11 +255,41 @@ def upload_file_to_directus(file_url: str = None, title: str = None) -> Optional
             img_response = requests.get(file_url, timeout=30, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             })
+
+            # Don't retry on 404 — image doesn't exist or is geo-blocked
+            if img_response.status_code == 404:
+                logger.warning(f"Image not found (404): {file_url}")
+                return None
+
             img_response.raise_for_status()
 
-            # Upload as multipart to /files
-            files = {"file": (f"{title or 'image'}.jpg", img_response.content, img_response.headers.get("Content-Type", "image/jpeg"))}
-            resp = requests.post(f"{base_url}/files", headers=headers, files=files, data={"title": (title or "image")[:255]}, timeout=60)
+            content_type = img_response.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+            filename = f"{title or 'image'}.jpg"
+
+            # Use MultipartEncoder for reliable Directus 10.x multipart upload
+            try:
+                from requests_toolbelt.multipart.encoder import MultipartEncoder
+                multipart_data = MultipartEncoder(fields={
+                    'title': (title or 'image')[:255],
+                    'file': (filename, img_response.content, content_type)
+                })
+                upload_headers = {**headers, 'Content-Type': multipart_data.content_type}
+                resp = requests.post(
+                    f"{base_url}/files",
+                    headers=upload_headers,
+                    data=multipart_data,
+                    timeout=60
+                )
+            except ImportError:
+                # Fallback to standard multipart if requests_toolbelt not installed
+                files = {"file": (filename, img_response.content, content_type)}
+                resp = requests.post(
+                    f"{base_url}/files",
+                    headers=headers,
+                    files=files,
+                    data={"title": (title or "image")[:255]},
+                    timeout=60
+                )
 
             if resp.status_code >= 400:
                 logger.warning(f"Directus upload failed (attempt {attempt}/3, status {resp.status_code}): {resp.text[:500]}")
@@ -672,10 +702,10 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
             
             first_cell = cells[0].text.strip().lower()
             if 'total' in first_cell:
-                if india_gross_idx and india_gross_idx < len(cells):
+                if india_gross_idx is not None and india_gross_idx < len(cells):
                     totals['india_gross_total'] = parse_number_from_text(cells[india_gross_idx].text.strip()) or 0
                 
-                if overseas_idx and overseas_idx < len(cells):
+                if overseas_idx is not None and overseas_idx < len(cells):
                     totals['overseas_total'] = parse_number_from_text(cells[overseas_idx].text.strip()) or 0
                 
                 break
@@ -1001,7 +1031,7 @@ def _extract_release_information(soup: BeautifulSoup) -> Dict:
 
         break
 
-    details["ott_platform"] = platform_names
+    details["ott_platform"] = ", ".join(platform_names) if platform_names else None
 
     # 4) Extract OTT release date
     for row in ott_li.select("div.flex.justify-between"):
@@ -1260,12 +1290,16 @@ def check_duplicate_movie(title: str, sacnilk_url: str) -> Optional[Dict]:
         if exact_match and len(exact_match) > 0:
             return exact_match[0]
         
-        # Fuzzy title match
+        # Fuzzy title match — use Directus search to pre-filter candidates
+        # instead of loading all 1000 movies into memory
         threshold = get_setting('fuzzy_match_threshold', 90)
-        result = directus_get("/items/movies?limit=1000&fields=id,title,sacnilk_source_url")
-        all_movies = result.get('data', [])
-        
-        for movie in all_movies:
+
+        # Extract first 3 significant words for a targeted search
+        search_term = ' '.join(title.split()[:3])
+        result = directus_get(f"/items/movies?search={requests.utils.quote(search_term)}&limit=50&fields=id,title,sacnilk_source_url")
+        candidates = result.get('data', [])
+
+        for movie in candidates:
             similarity = fuzzy_match(title, movie.get('title', ''))
             if similarity >= threshold:
                 return movie

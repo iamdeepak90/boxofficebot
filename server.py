@@ -3,14 +3,42 @@ server.py - Web layer for Slack webhooks + Settings UI/API
 Runs on port 8000
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from common import *
 import json
 import os
 import hmac
 import hashlib
+from functools import wraps
 
 app = Flask(__name__, static_folder='templates', template_folder='templates')
+
+# ============================================================================
+# BASIC AUTH FOR SETTINGS
+# ============================================================================
+
+def check_auth(username: str, password: str) -> bool:
+    """Validate username and password against Redis settings"""
+    expected_user = get_setting('admin_username', 'admin')
+    expected_pass = get_setting('admin_password', 'changeme')
+    return (
+        hmac.compare_digest(username.encode(), expected_user.encode()) and
+        hmac.compare_digest(password.encode(), expected_pass.encode())
+    )
+
+def requires_auth(f):
+    """Decorator to protect settings endpoints with HTTP Basic Auth"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return Response(
+                'Authentication required',
+                401,
+                {'WWW-Authenticate': 'Basic realm="Box Office Settings"'}
+            )
+        return f(*args, **kwargs)
+    return decorated
 
 # ============================================================================
 # SLACK WEBHOOK HANDLER
@@ -202,6 +230,7 @@ def slack_interactions():
 # ============================================================================
 
 @app.route('/')
+@requires_auth
 @app.route('/settings')
 def settings_page():
     """Serve settings HTML page"""
@@ -217,6 +246,7 @@ def serve_static(filename):
 # SETTINGS API - SYSTEM
 # ============================================================================
 
+@requires_auth
 @app.route('/api/settings/system', methods=['GET'])
 def get_system_settings():
     """Get system settings"""
@@ -231,6 +261,7 @@ def get_system_settings():
     })
 
 
+@requires_auth
 @app.route('/api/settings/system', methods=['POST'])
 def save_system_settings():
     """Save system settings"""
@@ -243,18 +274,21 @@ def save_system_settings():
 # SETTINGS API - RSS FEEDS
 # ============================================================================
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/news', methods=['GET'])
 def get_news_feeds():
     """Get news RSS feeds"""
     return jsonify({'feeds': get_setting('news_rss_feeds', [])})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/box_office', methods=['GET'])
 def get_box_office_feeds():
     """Get box office RSS feeds"""
     return jsonify({'feeds': get_setting('box_office_rss_feeds', [])})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/news/add', methods=['POST'])
 def add_news_feed():
     """Add news RSS feed"""
@@ -268,6 +302,7 @@ def add_news_feed():
     return jsonify({'success': True})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/box_office/add', methods=['POST'])
 def add_box_office_feed():
     """Add box office RSS feed"""
@@ -281,6 +316,7 @@ def add_box_office_feed():
     return jsonify({'success': True})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/news/toggle', methods=['POST'])
 def toggle_news_feed():
     """Toggle news feed"""
@@ -295,6 +331,7 @@ def toggle_news_feed():
     return jsonify({'success': False})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/box_office/toggle', methods=['POST'])
 def toggle_box_office_feed():
     """Toggle box office feed"""
@@ -309,6 +346,7 @@ def toggle_box_office_feed():
     return jsonify({'success': False})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/news/remove', methods=['POST'])
 def remove_news_feed():
     """Remove news feed"""
@@ -323,6 +361,7 @@ def remove_news_feed():
     return jsonify({'success': False})
 
 
+@requires_auth
 @app.route('/api/settings/rss_feeds/box_office/remove', methods=['POST'])
 def remove_box_office_feed():
     """Remove box office feed"""
@@ -340,6 +379,7 @@ def remove_box_office_feed():
 # SETTINGS API - AI MODELS
 # ============================================================================
 
+@requires_auth
 @app.route('/api/settings/ai_models', methods=['GET'])
 def get_ai_models():
     """Get AI model settings"""
@@ -401,6 +441,7 @@ def get_ai_models():
     })
 
 
+@requires_auth
 @app.route('/api/settings/ai_models', methods=['POST'])
 def save_ai_models():
     """Save AI model settings"""
@@ -413,6 +454,7 @@ def save_ai_models():
 # SETTINGS API - SCRAPER
 # ============================================================================
 
+@requires_auth
 @app.route('/api/settings/scraper', methods=['GET'])
 def get_scraper_settings():
     """Get scraper settings"""
@@ -423,6 +465,7 @@ def get_scraper_settings():
     })
 
 
+@requires_auth
 @app.route('/api/settings/scraper', methods=['POST'])
 def save_scraper_settings():
     """Save scraper settings"""
@@ -435,6 +478,7 @@ def save_scraper_settings():
 # SETTINGS API - ADVANCED
 # ============================================================================
 
+@requires_auth
 @app.route('/api/settings/advanced', methods=['GET'])
 def get_advanced_settings():
     """Get advanced settings"""
@@ -446,6 +490,7 @@ def get_advanced_settings():
     })
 
 
+@requires_auth
 @app.route('/api/settings/advanced', methods=['POST'])
 def save_advanced_settings():
     """Save advanced settings"""

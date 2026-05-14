@@ -815,55 +815,85 @@ def create_daily_pages():
     logger.info("=" * 60)
     logger.info("DAILY PAGES: CREATE + CLOSE")
     logger.info("=" * 60)
-    
+
     try:
         today = datetime.now().date()
         today_str = today.strftime('%Y-%m-%d')
-        
-        result = directus_get("/items/movies?filter[status][_eq]=running&limit=1000")
+
+        result = directus_get("/items/movies?filter[status][_eq]=running&limit=1000&fields=id,title,release_date,sacnilk_source_url,budget,india_gross_total,overseas_total")
         running_movies = result.get('data', [])
-        
+
         if not running_movies:
             logger.info("No running movies")
             return
-        
+
         logger.info(f"Processing {len(running_movies)} running movies")
-        
+
         created_count = 0
         closed_count = 0
-        
+        skipped_count = 0
+
         for movie in running_movies:
             try:
                 movie_id = movie['id']
                 title = movie.get('title')
                 release_date = movie.get('release_date')
-                
+                sacnilk_url = movie.get('sacnilk_source_url')
+
                 day_number = calculate_day_number(release_date, today_str)
-                
+
                 logger.info(f"{title}: Day {day_number}")
-                
-                # Skip if Day 0 or negative (shouldn't happen)
+
                 if day_number <= 0:
                     logger.warning(f"Skipping {title}: Day {day_number}")
                     continue
-                
-                # Check if page exists
+
+                # Check if today's page already exists
                 existing = directus_get(
                     f"/items/daily_stats?filter[movie_id][_eq]={movie_id}&filter[day_number][_eq]={day_number}&limit=1"
                 )
-                
+
                 if existing.get('data'):
                     logger.info(f"Day {day_number} already exists")
                     continue
-                
-                # 2-day gap check
-                still_tracked = check_movie_still_tracked(movie)
-                
-                if not still_tracked:
-                    close_movie_and_calculate_verdict(movie_id, movie)
-                    closed_count += 1
-                    continue
-                
+
+                # Single scrape — feeds both gap check and Sacnilk gate
+                parsed_live = None
+                if sacnilk_url:
+                    html = get_page_content(sacnilk_url)
+                    if html:
+                        parsed_live = parse_box_office_table(html)
+
+                # Gap check — close movie if Sacnilk stopped tracking (3+ day gap)
+                if parsed_live and parsed_live.get('days'):
+                    actual_max_day = max(d['day_number'] for d in parsed_live['days'])
+                    release = datetime.strptime(release_date, "%Y-%m-%d")
+                    expected_days = (datetime.now() - release).days
+                    gap = expected_days - actual_max_day
+                    logger.info(f"{title} — Sacnilk max: Day {actual_max_day}, Expected: Day {expected_days}, Gap: {gap}")
+
+                    if gap >= 3:
+                        close_movie_and_calculate_verdict(movie_id, movie, parsed_live)
+                        closed_count += 1
+                        continue
+                else:
+                    # Can't scrape — assume still running, don't close
+                    logger.warning(f"Could not scrape {title} — skipping gap check")
+
+                # Sacnilk gate — only create Day N if Sacnilk has Day N-1
+                if parsed_live and day_number > 1:
+                    max_sacnilk_day = max((d['day_number'] for d in parsed_live.get('days', [])), default=0)
+                    prev_day = day_number - 1
+                    if max_sacnilk_day < prev_day:
+                        logger.warning(
+                            f"Skipping Day {day_number} for '{title}': "
+                            f"Sacnilk only has up to Day {max_sacnilk_day}, need Day {prev_day}"
+                        )
+                        skipped_count += 1
+                        continue
+                    else:
+                        logger.info(f"Sacnilk has Day {max_sacnilk_day} ✅ — safe to create Day {day_number}")
+
                 # Create today's page
                 stats_payload = {
                     'movie_id': movie_id,
@@ -874,13 +904,11 @@ def create_daily_pages():
                     'slug': slugify(f"{title}-day-{day_number}-box-office-collection"),
                     'tags': [title, f"day {day_number}", "box office"]
                 }
-                
+
                 result = directus_post('/items/daily_stats', stats_payload)
-                
+
                 if result.get('data'):
                     created_count += 1
-                    
-                    # Queue AI job
                     enqueue_job('queue:content_generation', {
                         'type': 'daily_box_office_prediction',
                         'movie_id': movie_id,
@@ -888,102 +916,116 @@ def create_daily_pages():
                         'movie_title': title,
                         'mode': 'prediction'
                     })
-                    
-                    logger.info(f"✅ Created Day {day_number} page")
-                
+                    logger.info(f"✅ Created Day {day_number} page for {title}")
+
                 time.sleep(random.uniform(1, 2))
-                
+
             except Exception as e:
                 logger.error(f"Error processing {title}: {e}")
                 continue
-        
-        logger.info(f"Daily pages complete: {created_count} created, {closed_count} closed")
-        
+
+        logger.info(f"Daily pages complete: {created_count} created, {closed_count} closed, {skipped_count} skipped (Sacnilk not ready)")
+
     except Exception as e:
         logger.error(f"Daily pages failed: {e}")
 
 
-def check_movie_still_tracked(movie: Dict) -> bool:
-    """Check if Sacnilk still tracking (2-day gap check)"""
+def check_movie_still_tracked(movie: Dict, parsed: Dict = None) -> bool:
+    """Check if Sacnilk still tracking (3-day gap check)"""
     try:
         sacnilk_url = movie.get('sacnilk_source_url')
         release_date = movie.get('release_date')
-        
+
         if not sacnilk_url or not release_date:
             return True
-        
-        html = get_page_content(sacnilk_url)
-        if not html:
-            return True
-        
-        parsed = parse_box_office_table(html)
+
         if not parsed:
+            html = get_page_content(sacnilk_url)
+            if not html:
+                return True
+            parsed = parse_box_office_table(html)
+
+        if not parsed or not parsed.get('days'):
             return True
-        
-        actual_days = len(parsed['days'])
-        
+
+        actual_max_day = max(d['day_number'] for d in parsed['days'])
         release = datetime.strptime(release_date, "%Y-%m-%d")
-        today = datetime.now()
-        expected_days = (today - release).days + 1
-        
-        gap = expected_days - actual_days
-        
-        logger.info(f"Expected: {expected_days}, Actual: {actual_days}, Gap: {gap}")
-        
+        expected_days = (datetime.now() - release).days
+        gap = expected_days - actual_max_day
+
+        logger.info(f"Sacnilk max: Day {actual_max_day}, Expected: Day {expected_days}, Gap: {gap}")
+
         return gap < 3
-        
+
     except Exception as e:
         logger.error(f"Gap check failed: {e}")
         return True
 
 
-def close_movie_and_calculate_verdict(movie_id: str, movie: Dict):
-    """Close movie and calculate verdict"""
+def close_movie_and_calculate_verdict(movie_id: str, movie: Dict, parsed_live: Dict = None):
+    """Close movie and calculate verdict using final scraped figures"""
     try:
         title = movie.get('title')
         budget = movie.get('budget', 0)
+        sacnilk_url = movie.get('sacnilk_source_url')
+
+        # Use already-scraped data if passed, otherwise re-scrape for final figures
         india_gross = movie.get('india_gross_total', 0)
-        
+        overseas = movie.get('overseas_total', 0)
+
+        if not parsed_live and sacnilk_url:
+            html = get_page_content(sacnilk_url)
+            if html:
+                parsed_live = parse_box_office_table(html)
+
+        if parsed_live and parsed_live.get('totals'):
+            totals = parsed_live['totals']
+            if totals.get('india_gross_total'):
+                india_gross = totals['india_gross_total']
+            if totals.get('overseas_total'):
+                overseas = totals['overseas_total']
+
+            # Update Directus with final figures before closing
+            directus_patch(f"/items/movies/{movie_id}", {
+                'india_gross_total': india_gross,
+                'overseas_total': overseas
+            })
+
         verdict = 'pending'
-        
+
         if budget > 0 and india_gross > 0:
-            roi = india_gross / budget
-            
-            if roi >= 5:
+            ratio = (india_gross / budget) * 100  # as percentage of budget
+            if ratio >= 200:
                 verdict = 'blockbuster'
-            elif roi >= 3:
+            elif ratio >= 150:
+                verdict = 'super_hit'
+            elif ratio >= 100:
                 verdict = 'hit'
-            elif roi >= 2:
+            elif ratio >= 75:
                 verdict = 'average'
-            elif roi >= 1:
+            elif ratio >= 50:
+                verdict = 'below_average'
+            elif ratio >= 25:
                 verdict = 'flop'
             else:
                 verdict = 'disaster'
-        
+
         directus_patch(f"/items/movies/{movie_id}", {
             'status': 'closed',
             'verdict': verdict
         })
-        
-        logger.info(f"✅ Closed: {title} - Verdict: {verdict}")
-        
-        # Slack notification
+
+        logger.info(f"✅ Closed: {title} — India Gross: ₹{india_gross} Cr, Budget: ₹{budget} Cr, Verdict: {verdict.upper()}")
+
         blocks = [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": "🏁 MOVIE CLOSED"}
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*{title}*\nIndia Gross: ₹{india_gross} Cr\nBudget: ₹{budget} Cr\nVerdict: *{verdict.upper()}*"
-                }
-            }
+            {"type": "header", "text": {"type": "plain_text", "text": "🏁 MOVIE CLOSED"}},
+            {"type": "section", "text": {"type": "mrkdwn",
+                "text": f"*{title}*\nIndia Gross: ₹{india_gross} Cr\nBudget: ₹{budget} Cr\nVerdict: *{verdict.upper()}*"
+            }}
         ]
-        
+
         slack_post_message(blocks, f"Movie closed: {title}")
-        
+
     except Exception as e:
         logger.error(f"Close movie failed: {e}")
 
@@ -1028,42 +1070,57 @@ def scrape_all_running_movies():
                     continue
                 
                 # Update daily stats
-                today = datetime.now().date().strftime('%Y-%m-%d')
-                
-                # Update each day's stats from scraped data
+                today = datetime.now().date()
+                today_str = today.strftime('%Y-%m-%d')
+                three_days_ago = (today - timedelta(days=3)).strftime('%Y-%m-%d')
 
+                # Update each day's stats from scraped data
                 for day_data in parsed['days']:
                     day_number = day_data['day_number']
                     india_net = day_data['india_net']
-                    
-                    # Skip Day 0 unless it's actually in scraped data
-                    # (This will only create Day 0 if Sacnilk shows it)
-                    
+
                     # Check if exists
                     result = directus_get(
                         f"/items/daily_stats?filter[movie_id][_eq]={movie_id}&filter[day_number][_eq]={day_number}&limit=1"
                     )
-                    
                     existing = result.get('data', [])
-                    
+
                     if existing:
-                        # Update existing
                         stats = existing[0]
-                        day_date = stats.get('date')
-                        
-                        if day_date == today:
-                            directus_patch(f"/items/daily_stats/{stats['id']}", {
-                                'india_net': india_net,
-                                'is_estimate': True
-                            })
-                            logger.info(f"Updated Day {day_number}: ₹{india_net} Cr")
+                        day_date = stats.get('date', '')
+                        old_net = stats.get('india_net', 0)
+
+                        # FIX: Update last 3 days, not just today
+                        # This catches cases where Sacnilk updates figures retroactively
+                        if day_date >= three_days_ago:
+                            changed = abs((old_net or 0) - (india_net or 0)) > 0.01
+                            is_now_actual = stats.get('is_estimate', True) and india_net > 0
+
+                            if changed or is_now_actual:
+                                directus_patch(f"/items/daily_stats/{stats['id']}", {
+                                    'india_net': india_net,
+                                    'is_estimate': day_date == today_str  # today = still estimate, past = actual
+                                })
+                                logger.info(f"Updated Day {day_number}: ₹{old_net} → ₹{india_net} Cr")
+
+                                # FIX: Re-queue SEO content with actual figure if value changed
+                                if changed and india_net > 0:
+                                    enqueue_job('queue:content_generation', {
+                                        'type': 'daily_box_office_actual',
+                                        'movie_id': movie_id,
+                                        'day_number': day_number,
+                                        'movie_title': title,
+                                        'mode': 'actual',
+                                        'india_net': india_net
+                                    })
+                                    logger.info(f"Re-queued SEO for Day {day_number} with actual figure")
                     else:
-                        # Backfill (including Day 0 if present)
+                        # Backfill missing day
                         if day_number == 0:
                             day_date = (datetime.strptime(release_date, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
                         else:
                             day_date = (datetime.strptime(release_date, '%Y-%m-%d') + timedelta(days=day_number - 1)).strftime('%Y-%m-%d')
-                        
+
                         stats_payload = {
                             'movie_id': movie_id,
                             'day_number': day_number,
@@ -1071,13 +1128,11 @@ def scrape_all_running_movies():
                             'india_net': india_net,
                             'is_estimate': False,
                             'slug': slugify(f"{title}-day-{day_number}-box-office-collection"),
-                            'tags': [title, f"day {day_number}"]
+                            'tags': [title, f"day {day_number}", "box office"]
                         }
-                        
+
                         result = directus_post('/items/daily_stats', stats_payload)
-                        
                         if result.get('data'):
-                            # Queue AI job
                             enqueue_job('queue:content_generation', {
                                 'type': 'daily_box_office_actual',
                                 'movie_id': movie_id,
@@ -1086,21 +1141,26 @@ def scrape_all_running_movies():
                                 'mode': 'actual',
                                 'india_net': india_net
                             })
-                            
                             logger.info(f"Backfilled Day {day_number}: ₹{india_net} Cr")
-                
-                # Update movie totals
+
+                # Update movie totals from parsed totals row
+                totals_update = {}
                 if parsed.get('totals'):
-                    update_data = {}
-                    
                     if 'india_gross_total' in parsed['totals']:
-                        update_data['india_gross_total'] = parsed['totals']['india_gross_total']
-                    
+                        totals_update['india_gross_total'] = parsed['totals']['india_gross_total']
                     if 'overseas_total' in parsed['totals']:
-                        update_data['overseas_total'] = parsed['totals']['overseas_total']
-                    
-                    if update_data:
-                        directus_patch(f"/items/movies/{movie_id}", update_data)
+                        totals_update['overseas_total'] = parsed['totals']['overseas_total']
+
+                # FIX: Fallback — if totals row missing, sum india_net from all parsed days
+                if 'india_gross_total' not in totals_update and parsed.get('days'):
+                    total_net = sum(d.get('india_net', 0) for d in parsed['days'])
+                    if total_net > 0:
+                        totals_update['india_gross_total'] = total_net
+                        logger.info(f"Totals row missing — computed india_gross_total from daily sum: ₹{total_net} Cr")
+
+                if totals_update:
+                    directus_patch(f"/items/movies/{movie_id}", totals_update)
+                    logger.info(f"Updated movie totals: {totals_update}")
                 
                 logger.info(f"✅ Scraped: {title}")
                 
@@ -1190,6 +1250,18 @@ def run_audit():
                         })
                         
                         logger.info(f"Corrected Day {day_number}: ₹{old_value} → ₹{new_value} Cr")
+
+                        # FIX: Re-queue SEO content with corrected actual figure
+                        if new_value > 0:
+                            enqueue_job('queue:content_generation', {
+                                'type': 'daily_box_office_actual',
+                                'movie_id': movie_id,
+                                'day_number': day_number,
+                                'movie_title': title,
+                                'mode': 'actual',
+                                'india_net': new_value
+                            })
+                            logger.info(f"Re-queued SEO for Day {day_number} after audit correction")
                 
                 # Update movie totals
                 if parsed.get('totals'):

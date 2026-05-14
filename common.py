@@ -642,78 +642,103 @@ def get_page_content(url: str) -> Optional[str]:
 
 
 def parse_box_office_table(html_content: str) -> Optional[Dict]:
-    """Parse Sacnilk box office table"""
+    """
+    Parse Sacnilk box office data from card-based layout.
+
+    Sacnilk uses two separate HTML structures:
+    1. Total Collections Summary section — cards for India Gross, Overseas, Worldwide
+    2. Language section — day cards with data-day attribute and collection amount
+
+    We take india_net per day from the FIRST language section's day cards
+    (combining all languages would double-count; the top-level summary has the true totals).
+    """
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
-        table = soup.find('table')
-        
-        if not table:
-            return None
-        
-        rows = table.find_all('tr')
-        if len(rows) < 2:
-            return None
-        
-        # Parse header
-        header = rows[0]
-        headers = [th.text.strip().lower() for th in header.find_all(['th', 'td'])]
-        
-        # Find column indices
-        day_idx = next((i for i, h in enumerate(headers) if 'day' in h), 0)
-        india_net_idx = next((i for i, h in enumerate(headers) if 'india net' in h or 'nett' in h), None)
-        india_gross_idx = next((i for i, h in enumerate(headers) if 'india gross' in h or 'gross india' in h), None)
-        overseas_idx = next((i for i, h in enumerate(headers) if 'overseas' in h or 'international' in h), None)
-        
-        # Parse data rows
+
+        # ── 1. Parse totals from "Total Collections Summary" section ──────────
+        totals = {}
+        summary_section = soup.find('h2', string=lambda t: t and 'Total Collections Summary' in t)
+        if summary_section:
+            parent = summary_section.find_parent('section')
+            if parent:
+                for card in parent.select('div.text-center, a.collection-card div.text-center'):
+                    label_el = card.find('div', class_=lambda c: c and 'text-gray-600' in c)
+                    value_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
+                    if not label_el or not value_el:
+                        continue
+                    label = label_el.get_text(strip=True).lower()
+                    value = parse_number_from_text(value_el.get_text(strip=True))
+                    if value is None:
+                        continue
+                    if 'india gross' in label:
+                        totals['india_gross_total'] = value
+                    elif 'overseas' in label and 'share' not in label:
+                        totals['overseas_total'] = value
+                    elif 'worldwide' in label and 'total' in label:
+                        totals['worldwide_total'] = value
+
+        logger.info(f"Parsed totals: {totals}")
+
+        # ── 2. Parse day-wise india_net from first language section ───────────
+        # Each language section is a <section> containing an <h2> with "Version - Daily Net Collection"
+        # and day cards like: <a class="collection-card" data-day="N">
         days_data = []
-        
-        for row in rows[1:]:
-            cells = row.find_all(['td', 'th'])
-            if len(cells) < 2:
+
+        # Find the first language section (Hindi or whatever is first)
+        lang_section = None
+        for section in soup.find_all('section'):
+            h2 = section.find('h2')
+            if h2 and 'Daily Net Collection' in h2.get_text():
+                lang_section = section
+                break
+
+        if not lang_section:
+            logger.warning("No language section found — falling back to all collection-cards on page")
+            lang_section = soup  # fallback: search entire page
+
+        # Extract day cards — each has data-day="N" attribute
+        seen_days = set()
+        for card in lang_section.select('a.collection-card[data-day]'):
+            day_attr = card.get('data-day', '')
+            if not day_attr.isdigit():
                 continue
-            
-            first_cell = cells[0].text.strip().lower()
-            if 'total' in first_cell:
+
+            day_number = int(day_attr)
+            if day_number in seen_days:
                 continue
-            
-            day_text = cells[day_idx].text.strip()
-            day_match = re.search(r'(\d+)', day_text)
-            
-            if not day_match:
-                continue
-            
-            day_number = int(day_match.group(1))
-            
-            india_net = 0
-            if india_net_idx is not None and india_net_idx < len(cells):
-                india_net = parse_number_from_text(cells[india_net_idx].text.strip()) or 0
-            
+            seen_days.add(day_number)
+
+            # Amount is in the bold div — text like "₹ 12.25Cr" or "₹ 19Cr"
+            amount_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
+            india_net = parse_number_from_text(amount_el.get_text(strip=True)) if amount_el else 0
+
             days_data.append({
                 'day_number': day_number,
-                'india_net': india_net
+                'india_net': india_net or 0
             })
-        
-        # Parse totals
-        totals = {}
-        for row in reversed(rows):
-            cells = row.find_all(['td', 'th'])
-            if not cells:
-                continue
-            
-            first_cell = cells[0].text.strip().lower()
-            if 'total' in first_cell:
-                if india_gross_idx is not None and india_gross_idx < len(cells):
-                    totals['india_gross_total'] = parse_number_from_text(cells[india_gross_idx].text.strip()) or 0
-                
-                if overseas_idx is not None and overseas_idx < len(cells):
-                    totals['overseas_total'] = parse_number_from_text(cells[overseas_idx].text.strip()) or 0
-                
-                break
-        
+
+        # Sort by day number
+        days_data.sort(key=lambda x: x['day_number'])
+
+        logger.info(f"Parsed {len(days_data)} days from card layout")
+        if days_data:
+            logger.info(f"  Day range: {days_data[0]['day_number']} → {days_data[-1]['day_number']}")
+
+        # ── 3. Fallback: compute india_gross_total from daily sum if not in totals ──
+        if 'india_gross_total' not in totals and days_data:
+            fallback = sum(d['india_net'] for d in days_data)
+            if fallback > 0:
+                totals['india_gross_total'] = fallback
+                logger.info(f"Totals card not found — computed india_gross_total from daily sum: ₹{fallback} Cr")
+
+        if not days_data and not totals:
+            logger.error("parse_box_office_table: no days and no totals parsed — check HTML selectors")
+            return None
+
         return {'days': days_data, 'totals': totals}
-        
+
     except Exception as e:
-        logger.error(f"Table parsing failed: {e}")
+        logger.error(f"parse_box_office_table failed: {e}")
         return None
 
 def scrape_sacnilk_movies(sacnilk_url: str) -> List[Dict]:

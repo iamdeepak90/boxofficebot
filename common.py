@@ -645,12 +645,11 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
     """
     Parse Sacnilk box office data from card-based layout.
 
-    Sacnilk uses two separate HTML structures:
-    1. Total Collections Summary section — cards for India Gross, Overseas, Worldwide
-    2. Language section — day cards with data-day attribute and collection amount
+    PRIMARY: Individual day page — extracts consolidated India Net from
+             "Overall Total India Net Collection" row.
 
-    We take india_net per day from the FIRST language section's day cards
-    (combining all languages would double-count; the top-level summary has the true totals).
+    FALLBACK: Movie page language sections — sums all Indian language
+              sections (excludes Overseas/International) per day number.
     """
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -679,54 +678,111 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
 
         logger.info(f"Parsed totals: {totals}")
 
-        # ── 2. Parse day-wise india_net from first language section ───────────
-        # Each language section is a <section> containing an <h2> with "Version - Daily Net Collection"
-        # and day cards like: <a class="collection-card" data-day="N">
+        # ── 2. Check if this is an individual day page ────────────────────────
+        # Individual day page has "Overall Total India Net Collection" row
+        # and a day-wise summary table with desktop/mobile rows
         days_data = []
 
-        # Find the first language section (Hindi or whatever is first)
-        lang_section = None
+        overall_row = soup.find(
+            lambda tag: tag.name and
+            'Overall Total India Net Collection' in tag.get_text() and
+            'text-yellow-300' in ' '.join(tag.get('class', []))
+        )
+
+        if overall_row:
+            # ── PRIMARY: Individual day page ──────────────────────────────────
+            # Extract day number from h2: "Drishyam 3 (Malayalam) - Box Office Summary"
+            # and rows like "Day 1", "Day 2" inside the summary table
+            day_rows = soup.select('div.hidden.md\\:block div[class*="grid-cols-4"]')
+
+            for row in day_rows:
+                cells = row.find_all('div', recursive=False)
+                if len(cells) < 2:
+                    continue
+                day_text = cells[0].get_text(strip=True)
+                day_match = re.search(r'Day\s*(\d+)', day_text)
+                if not day_match:
+                    continue
+                day_number = int(day_match.group(1))
+                # India Net is in text-purple-600 cell (2nd column)
+                net_el = row.find('div', class_=lambda c: c and 'text-purple-600' in c)
+                india_net = parse_number_from_text(net_el.get_text(strip=True)) if net_el else 0
+                if india_net:
+                    days_data.append({
+                        'day_number': day_number,
+                        'india_net': india_net or 0
+                    })
+
+            if days_data:
+                logger.info(f"[PRIMARY] Parsed {len(days_data)} days from individual day page")
+                days_data.sort(key=lambda x: x['day_number'])
+                return {'days': days_data, 'totals': totals}
+            else:
+                logger.warning("[PRIMARY] Individual day page detected but no rows parsed — falling back")
+
+        # ── 3. FALLBACK: Movie page — sum all Indian language sections ─────────
+        # Each language section is a <section> with h2 containing
+        # "Version - Daily Net Collection" but NOT "Overseas" or "International"
+        OVERSEAS_KEYWORDS = {'overseas', 'international', 'worldwide', 'foreign'}
+
+        # Accumulate india_net per day across all Indian language sections
+        day_totals: Dict[int, float] = {}
+        # Also collect day→href map for primary method in scrape_all_running_movies
+        day_hrefs: Dict[int, str] = {}
+
+        lang_sections = []
         for section in soup.find_all('section'):
             h2 = section.find('h2')
-            if h2 and 'Daily Net Collection' in h2.get_text():
-                lang_section = section
-                break
-
-        if not lang_section:
-            logger.warning("No language section found — falling back to all collection-cards on page")
-            lang_section = soup  # fallback: search entire page
-
-        # Extract day cards — each has data-day="N" attribute
-        seen_days = set()
-        for card in lang_section.select('a.collection-card[data-day]'):
-            day_attr = card.get('data-day', '')
-            if not day_attr.isdigit():
+            if not h2:
                 continue
-
-            day_number = int(day_attr)
-            if day_number in seen_days:
+            h2_text = h2.get_text(strip=True).lower()
+            if 'daily net collection' not in h2_text:
                 continue
-            seen_days.add(day_number)
+            # Skip overseas/international sections
+            if any(kw in h2_text for kw in OVERSEAS_KEYWORDS):
+                logger.info(f"Skipping overseas section: {h2.get_text(strip=True)}")
+                continue
+            lang_sections.append(section)
 
-            # Amount is in the bold div — text like "₹ 12.25Cr" or "₹ 19Cr"
-            amount_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
-            india_net = parse_number_from_text(amount_el.get_text(strip=True)) if amount_el else 0
+        logger.info(f"[FALLBACK] Found {len(lang_sections)} Indian language sections")
 
+        for section in lang_sections:
+            for card in section.select('a.collection-card[data-day]'):
+                day_attr = card.get('data-day', '')
+                if not day_attr.isdigit():
+                    continue
+                day_number = int(day_attr)
+
+                amount_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
+                india_net = parse_number_from_text(amount_el.get_text(strip=True)) if amount_el else 0
+
+                day_totals[day_number] = round(
+                    day_totals.get(day_number, 0.0) + (india_net or 0), 2
+                )
+
+                # Store href for the first language section only (all sections
+                # point to the same day page URL)
+                if day_number not in day_hrefs:
+                    href = card.get('href', '')
+                    if href:
+                        day_hrefs[day_number] = href
+
+        for day_number, india_net in sorted(day_totals.items()):
             days_data.append({
                 'day_number': day_number,
-                'india_net': india_net or 0
+                'india_net': india_net,
+                'day_page_href': day_hrefs.get(day_number, '')  # used by scraper for primary method
             })
 
-        # Sort by day number
-        days_data.sort(key=lambda x: x['day_number'])
-
-        logger.info(f"Parsed {len(days_data)} days from card layout")
+        logger.info(f"[FALLBACK] Summed {len(days_data)} days across {len(lang_sections)} language sections")
         if days_data:
-            logger.info(f"  Day range: {days_data[0]['day_number']} → {days_data[-1]['day_number']}")
+            sample = days_data[:3]
+            for d in sample:
+                logger.info(f"  Day {d['day_number']}: ₹{d['india_net']} Cr (href: {d.get('day_page_href', '')})")
 
-        # ── 3. Fallback: compute india_gross_total from daily sum if not in totals ──
+        # ── 4. Fallback totals ─────────────────────────────────────────────────
         if 'india_gross_total' not in totals and days_data:
-            fallback = sum(d['india_net'] for d in days_data)
+            fallback = round(sum(d['india_net'] for d in days_data), 2)
             if fallback > 0:
                 totals['india_gross_total'] = fallback
                 logger.info(f"Totals card not found — computed india_gross_total from daily sum: ₹{fallback} Cr")

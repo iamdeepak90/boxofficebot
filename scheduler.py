@@ -1074,12 +1074,42 @@ def scrape_all_running_movies():
                 today_str = today.strftime('%Y-%m-%d')
                 three_days_ago = (today - timedelta(days=3)).strftime('%Y-%m-%d')
 
-                # Update each day's stats from scraped data
                 for day_data in parsed['days']:
                     day_number = day_data['day_number']
-                    india_net = day_data['india_net']
+                    day_page_href = day_data.get('day_page_href', '')
 
-                    # Check if exists
+                    # PRIMARY: fetch individual day page for consolidated india_net
+                    india_net = 0
+                    if day_page_href:
+                        try:
+                            day_url = f"https://sacnilk.com{day_page_href}"
+                            day_html = get_page_content(day_url)
+                            if day_html:
+                                day_parsed = parse_box_office_table(day_html)
+                                # Individual day page returns days list with the
+                                # consolidated figure for that specific day
+                                if day_parsed and day_parsed.get('days'):
+                                    match = next(
+                                        (d for d in day_parsed['days'] if d['day_number'] == day_number),
+                                        None
+                                    )
+                                    if match and match['india_net'] > 0:
+                                        india_net = match['india_net']
+                                        logger.info(f"Day {day_number}: ₹{india_net} Cr [from day page]")
+                        except Exception as e:
+                            logger.warning(f"Day page fetch failed for Day {day_number}: {e}")
+
+                    # FALLBACK: use summed language data from movie page
+                    if not india_net:
+                        india_net = day_data.get('india_net', 0)
+                        if india_net:
+                            logger.info(f"Day {day_number}: ₹{india_net} Cr [summed from language sections]")
+
+                    if not india_net:
+                        logger.warning(f"Day {day_number}: no data from either source, skipping")
+                        continue
+
+                    # Check if exists in Directus
                     result = directus_get(
                         f"/items/daily_stats?filter[movie_id][_eq]={movie_id}&filter[day_number][_eq]={day_number}&limit=1"
                     )
@@ -1090,8 +1120,6 @@ def scrape_all_running_movies():
                         day_date = stats.get('date', '')
                         old_net = stats.get('india_net', 0)
 
-                        # FIX: Update last 3 days, not just today
-                        # This catches cases where Sacnilk updates figures retroactively
                         if day_date >= three_days_ago:
                             changed = abs((old_net or 0) - (india_net or 0)) > 0.01
                             is_now_actual = stats.get('is_estimate', True) and india_net > 0
@@ -1099,11 +1127,10 @@ def scrape_all_running_movies():
                             if changed or is_now_actual:
                                 directus_patch(f"/items/daily_stats/{stats['id']}", {
                                     'india_net': india_net,
-                                    'is_estimate': day_date == today_str  # today = still estimate, past = actual
+                                    'is_estimate': day_date == today_str
                                 })
                                 logger.info(f"Updated Day {day_number}: ₹{old_net} → ₹{india_net} Cr")
 
-                                # FIX: Re-queue SEO content with actual figure if value changed
                                 if changed and india_net > 0:
                                     enqueue_job('queue:content_generation', {
                                         'type': 'daily_box_office_actual',
@@ -1113,7 +1140,6 @@ def scrape_all_running_movies():
                                         'mode': 'actual',
                                         'india_net': india_net
                                     })
-                                    logger.info(f"Re-queued SEO for Day {day_number} with actual figure")
                     else:
                         # Backfill missing day
                         if day_number == 0:
@@ -1132,7 +1158,7 @@ def scrape_all_running_movies():
                         }
 
                         result = directus_post('/items/daily_stats', stats_payload)
-                        if result.get('data'):
+                        if result and result.get('data'):
                             enqueue_job('queue:content_generation', {
                                 'type': 'daily_box_office_actual',
                                 'movie_id': movie_id,

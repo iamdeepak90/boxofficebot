@@ -643,94 +643,100 @@ def get_page_content(url: str) -> Optional[str]:
 
 def parse_box_office_table(html_content: str) -> Optional[Dict]:
     """
-    Parse Sacnilk box office data from card-based layout.
-
-    PRIMARY: Individual day page — extracts consolidated India Net from
-             "Overall Total India Net Collection" row.
-
-    FALLBACK: Movie page language sections — sums all Indian language
-              sections (excludes Overseas/International) per day number.
+    Parse Sacnilk box office data.
+    PRIMARY:  Individual day page — 'Overall Total India Net Collection' row
+    FALLBACK: Movie page — sum Indian language sections per day (desktop cards only)
     """
     try:
         soup = BeautifulSoup(html_content, 'html.parser')
 
-        # ── 1. Parse totals from "Total Collections Summary" section ──────────
+        # ── 1. Totals from "Total Collections Summary" section ────────────────
         totals = {}
-        summary_section = soup.find('h2', string=lambda t: t and 'Total Collections Summary' in t)
-        if summary_section:
-            parent = summary_section.find_parent('section')
+        summary_h2 = soup.find('h2', string=lambda t: t and 'Total Collections Summary' in t)
+        if summary_h2:
+            parent = summary_h2.find_parent('section')
             if parent:
-                for card in parent.select('div.text-center, a.collection-card div.text-center'):
-                    label_el = card.find('div', class_=lambda c: c and 'text-gray-600' in c)
-                    value_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
-                    if not label_el or not value_el:
-                        continue
-                    label = label_el.get_text(strip=True).lower()
-                    value = parse_number_from_text(value_el.get_text(strip=True))
-                    if value is None:
-                        continue
-                    if 'india gross' in label:
-                        totals['india_gross_total'] = value
-                    elif 'overseas' in label and 'share' not in label:
-                        totals['overseas_total'] = value
-                    elif 'worldwide' in label and 'total' in label:
-                        totals['worldwide_total'] = value
+                # Only target the first grid (top 4 cards) — skip percentage breakdown grid
+                first_grid = parent.find('div', class_=lambda c: c and 'grid' in c and 'gap-4' in c)
+                if first_grid:
+                    for card in first_grid.find_all('div', recursive=False):
+                        label_el = card.find('div', class_=lambda c: c and 'text-gray-600' in c)
+                        value_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
+                        if not label_el or not value_el:
+                            # Also check <a> tags (Worldwide card is an <a>)
+                            label_el = card.find('div', class_=lambda c: c and 'text-gray-600' in c)
+                            value_el = card.find('div', class_=lambda c: c and 'font-bold' in c)
+                        if not label_el or not value_el:
+                            continue
+                        label = label_el.get_text(strip=True).lower()
+                        value = parse_number_from_text(value_el.get_text(strip=True))
+                        if value is None:
+                            continue
+                        if 'india gross' in label:
+                            totals['india_gross_total'] = value
+                        elif 'overseas' in label:
+                            totals['overseas_total'] = value
+                        elif 'worldwide' in label:
+                            totals['worldwide_total'] = value
+
+        # Also check <a> Worldwide card separately (it's an <a> not a <div>)
+        if 'worldwide_total' not in totals and summary_h2:
+            parent = summary_h2.find_parent('section')
+            if parent:
+                worldwide_card = parent.find('a', class_=lambda c: c and 'collection-card' in c)
+                if worldwide_card:
+                    label_el = worldwide_card.find('div', class_=lambda c: c and 'text-gray-600' in c)
+                    value_el = worldwide_card.find('div', class_=lambda c: c and 'font-bold' in c)
+                    if label_el and value_el and 'worldwide' in label_el.get_text(strip=True).lower():
+                        value = parse_number_from_text(value_el.get_text(strip=True))
+                        if value:
+                            totals['worldwide_total'] = value
 
         logger.info(f"Parsed totals: {totals}")
 
-        # ── 2. Check if this is an individual day page ────────────────────────
-        # Individual day page has "Overall Total India Net Collection" row
-        # and a day-wise summary table with desktop/mobile rows
+        # ── 2. Check if individual day page ───────────────────────────────────
+        # Individual day page has "Overall Total India Net Collection" in yellow text
         days_data = []
 
-        overall_row = soup.find(
+        overall_el = soup.find(
             lambda tag: tag.name and
             'Overall Total India Net Collection' in tag.get_text() and
-            'text-yellow-300' in ' '.join(tag.get('class', []))
+            any('text-yellow-300' in c for c in tag.get('class', []))
         )
 
-        if overall_row:
-            # ── PRIMARY: Individual day page ──────────────────────────────────
-            # Extract day number from h2: "Drishyam 3 (Malayalam) - Box Office Summary"
-            # and rows like "Day 1", "Day 2" inside the summary table
-            day_rows = soup.select('div.hidden.md\\:block div[class*="grid-cols-4"]')
-
-            for row in day_rows:
-                cells = row.find_all('div', recursive=False)
-                if len(cells) < 2:
+        if overall_el:
+            # Desktop rows only — class "hidden md:block"
+            # Each row has grid-cols-4: Day | India Net (purple) | Shows | Occupancy
+            for row in soup.select('div.hidden.md\\:block > div[class*="border-b"]'):
+                day_el = row.find('div', class_=lambda c: c and 'font-bold' in c and 'text-gray-800' in c)
+                net_el = row.find('div', class_=lambda c: c and 'text-purple-600' in c)
+                if not day_el or not net_el:
                     continue
-                day_text = cells[0].get_text(strip=True)
-                day_match = re.search(r'Day\s*(\d+)', day_text)
+                day_match = re.search(r'Day\s*(\d+)', day_el.get_text())
                 if not day_match:
                     continue
                 day_number = int(day_match.group(1))
-                # India Net is in text-purple-600 cell (2nd column)
-                net_el = row.find('div', class_=lambda c: c and 'text-purple-600' in c)
-                india_net = parse_number_from_text(net_el.get_text(strip=True)) if net_el else 0
-                if india_net:
-                    days_data.append({
-                        'day_number': day_number,
-                        'india_net': india_net or 0
-                    })
+                india_net = parse_number_from_text(net_el.get_text(strip=True)) or 0
+                if india_net > 0:
+                    days_data.append({'day_number': day_number, 'india_net': india_net})
 
             if days_data:
                 logger.info(f"[PRIMARY] Parsed {len(days_data)} days from individual day page")
                 days_data.sort(key=lambda x: x['day_number'])
                 return {'days': days_data, 'totals': totals}
             else:
-                logger.warning("[PRIMARY] Individual day page detected but no rows parsed — falling back")
+                logger.warning("[PRIMARY] Day page detected but no rows parsed — falling back")
 
-        # ── 3. FALLBACK: Movie page — sum all Indian language sections ─────────
-        # Each language section is a <section> with h2 containing
-        # "Version - Daily Net Collection" but NOT "Overseas" or "International"
+        # ── 3. FALLBACK: Movie page — sum Indian language sections ─────────────
+        # FIX: Only select cards from language section grids, NOT from
+        # any other grid on the page (e.g. chart/graph containers)
+        # Each language section has id="collection-cards-N" on its grid div
         OVERSEAS_KEYWORDS = {'overseas', 'international', 'worldwide', 'foreign'}
 
-        # Accumulate india_net per day across all Indian language sections
         day_totals: Dict[int, float] = {}
-        # Also collect day→href map for primary method in scrape_all_running_movies
         day_hrefs: Dict[int, str] = {}
+        lang_count = 0
 
-        lang_sections = []
         for section in soup.find_all('section'):
             h2 = section.find('h2')
             if not h2:
@@ -738,16 +744,19 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
             h2_text = h2.get_text(strip=True).lower()
             if 'daily net collection' not in h2_text:
                 continue
-            # Skip overseas/international sections
             if any(kw in h2_text for kw in OVERSEAS_KEYWORDS):
-                logger.info(f"Skipping overseas section: {h2.get_text(strip=True)}")
+                logger.info(f"Skipping section: {h2.get_text(strip=True)[:50]}")
                 continue
-            lang_sections.append(section)
 
-        logger.info(f"[FALLBACK] Found {len(lang_sections)} Indian language sections")
+            lang_count += 1
 
-        for section in lang_sections:
-            for card in section.select('a.collection-card[data-day]'):
+            # FIX: Only select the cards grid with id="collection-cards-N"
+            # This avoids picking up duplicate cards from graph/chart containers
+            cards_grid = section.find('div', id=lambda i: i and i.startswith('collection-cards-'))
+            if not cards_grid:
+                continue
+
+            for card in cards_grid.select('a.collection-card[data-day]'):
                 day_attr = card.get('data-day', '')
                 if not day_attr.isdigit():
                     continue
@@ -760,8 +769,6 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
                     day_totals.get(day_number, 0.0) + (india_net or 0), 2
                 )
 
-                # Store href for the first language section only (all sections
-                # point to the same day page URL)
                 if day_number not in day_hrefs:
                     href = card.get('href', '')
                     if href:
@@ -771,24 +778,20 @@ def parse_box_office_table(html_content: str) -> Optional[Dict]:
             days_data.append({
                 'day_number': day_number,
                 'india_net': india_net,
-                'day_page_href': day_hrefs.get(day_number, '')  # used by scraper for primary method
+                'day_page_href': day_hrefs.get(day_number, '')
             })
 
-        logger.info(f"[FALLBACK] Summed {len(days_data)} days across {len(lang_sections)} language sections")
-        if days_data:
-            sample = days_data[:3]
-            for d in sample:
-                logger.info(f"  Day {d['day_number']}: ₹{d['india_net']} Cr (href: {d.get('day_page_href', '')})")
+        logger.info(f"[FALLBACK] {lang_count} language sections, {len(days_data)} days summed")
 
         # ── 4. Fallback totals ─────────────────────────────────────────────────
         if 'india_gross_total' not in totals and days_data:
             fallback = round(sum(d['india_net'] for d in days_data), 2)
             if fallback > 0:
                 totals['india_gross_total'] = fallback
-                logger.info(f"Totals card not found — computed india_gross_total from daily sum: ₹{fallback} Cr")
+                logger.info(f"Computed india_gross_total from daily sum: ₹{fallback} Cr")
 
         if not days_data and not totals:
-            logger.error("parse_box_office_table: no days and no totals parsed — check HTML selectors")
+            logger.error("parse_box_office_table: nothing parsed — check HTML selectors")
             return None
 
         return {'days': days_data, 'totals': totals}

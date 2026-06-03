@@ -1176,6 +1176,8 @@ def scrape_all_running_movies():
                         totals_update['india_gross_total'] = parsed['totals']['india_gross_total']
                     if 'overseas_total' in parsed['totals']:
                         totals_update['overseas_total'] = parsed['totals']['overseas_total']
+                    if 'worldwide_total' in parsed['totals']:
+                        totals_update['worldwide_total'] = parsed['totals']['worldwide_total']
 
                 # FIX: Fallback — if totals row missing, sum india_net from all parsed days
                 if 'india_gross_total' not in totals_update and parsed.get('days'):
